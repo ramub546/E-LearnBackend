@@ -298,11 +298,11 @@ async function getLinkedStudentDetails(linkedStudents) {
 }
 
 
-// controllers/adminController.js
+// controllers/adminController.js           Namrata
 const Note = require('../models/Note');
 
 
-// ---------------------- GET PENDING NOTES ----------------------
+// ---------------------- GET PENDING NOTES ---------------------- 
 exports.getPendingNotes = async (req, res) => {
   try {
     const notes = await Note.find({ status: 'pending' })

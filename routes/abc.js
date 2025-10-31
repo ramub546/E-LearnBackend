@@ -1,5 +1,5 @@
-const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
+const mongoose = require('mongoose');    //JUST EXTRA DONT ADD THIS Namrata
+const bcrypt = require('bcryptjs');      //For testing if passwords are matching
 require('dotenv').config();
 
 const Teacher = require('./models/User'); // adjust path to your teacher model

@@ -1,4 +1,4 @@
-// models/Note.js
+// models/Note.js                                   Namrata
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
 

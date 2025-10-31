@@ -1,4 +1,4 @@
-const express = require('express');
+const express = require('express');   //Namrata
 const router = express.Router();
 const { getPendingNotes, approveNote, rejectNote } = require('../controllers/adminController');
 const { protect } = require('../middleware/authMiddleware'); // JWT auth middleware

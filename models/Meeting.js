@@ -1,4 +1,4 @@
-// models/Meeting.js
+// models/Meeting.js                               Namrata
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
 

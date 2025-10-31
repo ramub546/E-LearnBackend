@@ -207,7 +207,7 @@ exports.getTeacherProfile = async (req, res) => {
   }
 };
 
-const multer = require('multer');          // My addition for notes uploading
+const multer = require('multer');          // Namrata My addition for notes uploading
 const Note = require('../models/Note');
 
 
@@ -307,9 +307,7 @@ exports.downloadNote = async (req, res) => {
 
 
 
-// Optional: add Google Meet API integration if needed
-
-// ---------------------- SCHEDULE MEETING ----------------------
+/// ---------------------- SCHEDULE MEETING ----------------------
 exports.scheduleMeeting = async (req, res) => {
   try {
     const { title, description, date, durationMinutes, subjectId } = req.body;
@@ -319,7 +317,7 @@ exports.scheduleMeeting = async (req, res) => {
       return res.status(400).json({ message: 'Title, date, duration, and subjectId are required.' });
     }
 
-    // Get the subject to find the associated class
+    // Get the subject to find the associated class (fetching from db)
     const subject = await Subject.findById(subjectId);
     if (!subject) return res.status(400).json({ message: 'Invalid subjectId.' });
 
@@ -328,28 +326,35 @@ exports.scheduleMeeting = async (req, res) => {
       description,
       date,
       durationMinutes,
-      class: subject.class, // class derived from subject
+      class: subject.class, // class derived from subject table in db
       subject: subjectId,
       hostedBy: teacherId,
       isInstant: false,
       status: 'scheduled',
     });
 
-    // Optional: generate Google Meet link here
-    // meeting.meetingLink = await createGoogleMeetLink(...);
+    
+    // meeting.meetingLink = await createGoogleMeetLink(...) but for now generated in frontend
 
     await meeting.save();
 
     // Notify students of that class only
     const students = await User.find({ role: 'student', class: subject.class });
-    const emails = students.map(s => s.email);
+    const emails = students.map(s => s.email).filter(e => e);
 
     if (emails.length > 0) {
-      await sendCustomEmail({
-        to: emails,
-        subject: `New Meeting Scheduled: ${title}`,
-        text: `Hello,\n\nA new meeting "${title}" has been scheduled for your class.\n\nDescription: ${description || 'No description'}\nDate: ${new Date(date).toLocaleString()}\nDuration: ${durationMinutes} minutes\n\nJoin Link: ${meeting.meetingLink || 'To be added'}`
-      });
+      await sendCustomEmail(
+        emails, // toEmail
+        `New Meeting Scheduled: ${title}`, // subject
+        `<p>Hello,</p>
+         <p>A new meeting "<strong>${title}</strong>" has been scheduled for your class.</p>
+         <p><b>Description:</b> ${description || 'No description'}</p>
+         <p><b>Date:</b> ${new Date(date).toLocaleString()}</p>
+         <p><b>Duration:</b> ${durationMinutes} minutes</p>
+         <p><b>Join Link:</b> ${meeting.meetingLink || 'To be added'}</p>
+         <p><b>Check for notifications in your dashboard.</b></p>
+         <p>Best regards,<br>Your Teaching Team</p>`
+      );
     }
 
     return res.status(201).json({
@@ -395,14 +400,19 @@ exports.startInstantMeeting = async (req, res) => {
 
     // Notify students of that class only
     const students = await User.find({ role: 'student', class: subject.class });
-    const emails = students.map(s => s.email);
+    const emails = students.map(s => s.email).filter(e => e);
 
     if (emails.length > 0) {
-      await sendCustomEmail({
-        to: emails,
-        subject: `Instant Meeting Started: ${title}`,
-        text: `Hello,\n\nAn instant meeting "${title}" has just started for your class.\n\nDescription: ${description || 'No description'}\nDuration: ${durationMinutes} minutes\n\nJoin Link: ${meeting.meetingLink || 'To be added'}`
-      });
+      await sendCustomEmail(
+        emails, // toEmail
+        `Instant Meeting Started: ${title}`, // subject
+        `<p>Hello,</p>
+         <p>An instant meeting "<strong>${title}</strong>" has just started for your class.</p>
+         <p><b>Description:</b> ${description || 'No description'}</p>
+         <p><b>Duration:</b> ${durationMinutes} minutes</p>
+         <p><b>Join Link:</b> ${meeting.meetingLink || 'To be added'}</p>
+         <p>Best regards,<br>Your Teaching Team</p>`
+      );
     }
 
     return res.status(201).json({

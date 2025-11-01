@@ -2,6 +2,10 @@ const express = require('express');
 const router = express.Router();
 const studentController = require('../controllers/studentController');
 const { protect } = require('../middleware/authMiddleware');
+const { downloadAssignment, getClassAssignments } = require('../controllers/studentController');
+
+router.get('/assignments', protect, getClassAssignments);
+router.get('/download-assignment/:id', protect, downloadAssignment);
 
 // ✅ STUDENT NOTES ROUTES
 router.get('/notes', protect, studentController.getStudentNotes); // All notes grouped by subject

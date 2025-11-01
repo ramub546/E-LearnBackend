@@ -7,6 +7,7 @@ const { sendOtpEmail } = require('../utils/mailer');
 const Meeting = require('../models/Meeting');
 const Class = require('../models/Class');
 const Subject = require('../models/Subject');
+const Assignment = require('../models/Assignment'); // ✅ ADD THIS LINE
 
 // ---------------------- TEACHER SIGNUP REQUEST ----------------------
 exports.teacherSignup = async (req, res) => {
@@ -316,6 +317,146 @@ async function getAvailableSubjects(classId) {
   const subjects = await Subject.find({ class: classId });
   return subjects.map(s => s.subjectName).join(', ');
 }
+
+// Multer for assignments
+const assignmentUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
+  fileFilter: (req, file, cb) => {
+    const allowed = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ];
+    if (!allowed.includes(file.mimetype)) {
+      return cb(new Error('Only PDF and Word files allowed.'));
+    }
+    cb(null, true);
+  },
+});
+
+exports.uploadAssignmentMiddleware = assignmentUpload.single('file');
+
+
+
+// ---------------------- UPLOAD ASSIGNMENT ----------------------
+exports.uploadAssignment = async (req, res) => {
+  try {
+    const { title, description, subjectName, className, dueDate } = req.body;
+    const teacherId = req.user.id;
+
+    if (!title || !subjectName || !className || !dueDate) {
+      return res.status(400).json({ 
+        message: 'Title, subject name, class name, and due date are required' 
+      });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ message: 'File is required' });
+    }
+
+    // Find class
+    const cleanClassName = className.toString().replace(/"/g, '').trim();
+    const classData = await Class.findOne({ className: cleanClassName });
+    if (!classData) {
+      return res.status(400).json({ message: `Class "${cleanClassName}" not found` });
+    }
+
+    // Find subject
+    const subject = await Subject.findOne({
+      subjectName: { $regex: new RegExp(`^${subjectName}$`, 'i') },
+      class: classData._id
+    });
+
+    if (!subject) {
+      return res.status(400).json({ 
+        message: `Subject "${subjectName}" not found for class ${cleanClassName}` 
+      });
+    }
+
+    // Create assignment
+    const assignment = new Assignment({
+      title,
+      description,
+      subject: subject._id,
+      class: classData._id,
+      uploadedBy: teacherId,
+      fileName: req.file.originalname,
+      fileData: req.file.buffer,
+      fileMimeType: req.file.mimetype,
+      fileSize: req.file.size,
+      dueDate: new Date(dueDate),
+      status: 'active'
+    });
+
+    await assignment.save();
+
+    return res.status(201).json({
+      message: 'Assignment uploaded successfully',
+      assignment: {
+        id: assignment._id,
+        title: assignment.title,
+        subject: subject.subjectName,
+        class: classData.className,
+        dueDate: assignment.dueDate,
+        status: assignment.status
+      }
+    });
+
+  } catch (error) {
+    console.error('Upload Assignment Error:', error);
+    return res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// ---------------------- GET MY ASSIGNMENTS ----------------------
+exports.getMyAssignments = async (req, res) => {
+  try {
+    const teacherId = req.user.id;
+    const assignments = await Assignment.find({ uploadedBy: teacherId })
+      .populate('subject', 'subjectName')
+      .populate('class', 'className')
+      .select('-fileData')
+      .sort({ createdAt: -1 });
+
+    return res.json(assignments);
+  } catch (error) {
+    console.error('Get My Assignments Error:', error);
+    return res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// ---------------------- DOWNLOAD ASSIGNMENT ----------------------
+exports.downloadAssignment = async (req, res) => {
+  try {
+    const assignment = await Assignment.findById(req.params.id)
+      .populate('uploadedBy', 'fullName email')
+      .populate('class', 'className');
+
+    if (!assignment) {
+      return res.status(404).json({ message: 'Assignment not found' });
+    }
+
+    // Only teacher who uploaded or students from that class can download
+    const user = req.user;
+    
+    if (user.role === 'teacher' && assignment.uploadedBy._id.toString() !== user.id) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    if (user.role === 'student' && user.class.toString() !== assignment.class._id.toString()) {
+      return res.status(403).json({ message: 'Access denied - not in this class' });
+    }
+
+    res.set('Content-Type', assignment.fileMimeType);
+    res.set('Content-Disposition', `attachment; filename="${assignment.fileName}"`);
+    return res.send(assignment.fileData);
+
+  } catch (error) {
+    console.error('Download Assignment Error:', error);
+    return res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
 
 // ---------------------- GET MY NOTES ----------------------
 exports.getMyNotes = async (req, res) => {

@@ -126,3 +126,50 @@ exports.getStudentNotesBySubject = async (req, res) => {
     return res.status(500).json({ message: 'Server error', error: err.message });
   }
 };
+
+// ---------------------- GET CLASS ASSIGNMENTS ----------------------
+exports.getClassAssignments = async (req, res) => {
+  try {
+    const student = await User.findById(req.user.id);
+    const assignments = await Assignment.find({ 
+      class: student.class,
+      status: 'active'
+    })
+      .populate('subject', 'subjectName')
+      .populate('uploadedBy', 'fullName')
+      .select('-fileData')
+      .sort({ dueDate: 1 });
+
+    return res.json(assignments);
+  } catch (error) {
+    console.error('Get Class Assignments Error:', error);
+    return res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// ---------------------- DOWNLOAD ASSIGNMENT (Student) ----------------------
+exports.downloadAssignment = async (req, res) => {
+  try {
+    const assignment = await Assignment.findById(req.params.id)
+      .populate('class', 'className');
+
+    if (!assignment) {
+      return res.status(404).json({ message: 'Assignment not found' });
+    }
+
+    const student = await User.findById(req.user.id);
+    
+    // Check if student is in the same class
+    if (student.class.toString() !== assignment.class._id.toString()) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    res.set('Content-Type', assignment.fileMimeType);
+    res.set('Content-Disposition', `attachment; filename="${assignment.fileName}"`);
+    return res.send(assignment.fileData);
+
+  } catch (error) {
+    console.error('Download Assignment Error:', error);
+    return res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};

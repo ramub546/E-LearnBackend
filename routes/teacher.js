@@ -3,7 +3,7 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const teacherController = require('../controllers/teacherController');
-
+const { uploadAssignmentMiddleware, uploadAssignment, getMyAssignments, downloadAssignment } = require('../controllers/teacherController');
 
 const {
   uploadNote,
@@ -48,5 +48,11 @@ router.get('/download/:id', protect, teacherController.downloadNote);
 router.post('/schedule-meeting', protect, teacherController.scheduleMeeting);
 router.post('/start-instant-meeting', protect, teacherController.startInstantMeeting);
 router.get('/my-meetings', protect, teacherController.getMyMeetings);
+
+
+router.post('/upload-assignment', protect, uploadAssignmentMiddleware, uploadAssignment);
+router.get('/my-assignments', protect, getMyAssignments);
+router.get('/download-assignment/:id', protect, downloadAssignment);
+
 
 module.exports = router;

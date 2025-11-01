@@ -246,10 +246,9 @@ const upload = multer({
 
 exports.uploadMiddleware = upload.single('file');
 
-// ---------------------- UPLOAD NOTE ----------------------
 exports.uploadNote = async (req, res) => {
   try {
-    const { title, description, subjectName, className } = req.body; // Changed to names
+    const { title, description, subjectName, className } = req.body;
     const teacherId = req.user.id;
 
     if (!title || !subjectName || !className) {
@@ -260,25 +259,27 @@ exports.uploadNote = async (req, res) => {
       return res.status(400).json({ message: 'File is required' });
     }
 
-    // ✅ Find class by name
-    const classData = await Class.findOne({ className: className });
+    // ✅ FIX: Trim and validate class name
+    const cleanClassName = className.toString().trim();
+    
+    const classData = await Class.findOne({ className: cleanClassName });
     if (!classData) {
-      return res.status(400).json({ message: `Class ${className} not found` });
+      return res.status(400).json({ message: `Class "${cleanClassName}" not found` });
     }
 
-    // ✅ Find subject by name for this class
+    // ✅ FIX: Better subject search
     const subject = await Subject.findOne({
-      subjectName: new RegExp(`^${subjectName}$`, 'i'),
+      subjectName: { $regex: new RegExp(`^${subjectName}$`, 'i') },
       class: classData._id
     });
 
     if (!subject) {
       return res.status(400).json({ 
-        message: `Subject ${subjectName} not found for class ${className}. Available subjects: ${await getAvailableSubjects(classData._id)}` 
+        message: `Subject "${subjectName}" not found for class ${cleanClassName}` 
       });
     }
 
-    // Create note with the found IDs
+    // Rest of your code remains same...
     const note = new Note({
       title,
       description,
@@ -310,7 +311,6 @@ exports.uploadNote = async (req, res) => {
     return res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
-
 // Helper function to get available subjects for a class
 async function getAvailableSubjects(classId) {
   const subjects = await Subject.find({ class: classId });

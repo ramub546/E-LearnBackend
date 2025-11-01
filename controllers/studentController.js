@@ -1,6 +1,6 @@
 const User = require('../models/User');
 const Note = require('../models/Note');
-
+const Subject = require('../models/Subject');
 // ---------------------- GET STUDENT NOTES BY SUBJECT ----------------------
 exports.getStudentNotes = async (req, res) => {
   try {

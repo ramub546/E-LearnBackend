@@ -4,7 +4,7 @@ const express = require('express');
 const mongoose = require('mongoose'); // needed for fixRoleNumberIndex
 const bodyParser = require('body-parser');
 const connectDB = require('./config/db');
-
+const studentRoutes = require('./routes/student');
 const authRoutes = require('./routes/auth');
 const teacherRoutes = require('./routes/teacher');
 
@@ -20,6 +20,7 @@ app.use('/api/teacher', teacherRoutes);
 app.use('/api/auth', authRoutes);
 const adminRoutes = require('./routes/admin');
 app.use('/api/admin', adminRoutes);
+app.use('/api/student', studentRoutes);
 
 
 // Connect to database

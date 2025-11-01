@@ -76,7 +76,10 @@ const userSchema = new mongoose.Schema(
 
     // Teacher-specific fields
     countryRegion: { type: String, trim: true },
-    subjectSpecialization: { type: String },
+  subjectSpecialization: [{ 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'Subject' 
+  }],
     qualification: { type: String },
     idProofUrl: { type: String },
     teacherStatus: {

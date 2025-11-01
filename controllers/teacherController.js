@@ -5,7 +5,8 @@ const { sendCustomEmail } = require('../utils/mailer'); // ✅ Use sendCustomEma
 const User = require('../models/User');
 const { sendOtpEmail } = require('../utils/mailer');
 const Meeting = require('../models/Meeting');
-const Subject = require('../models/Subject'); 
+const Class = require('../models/Class');
+const Subject = require('../models/Subject');
 
 // ---------------------- TEACHER SIGNUP REQUEST ----------------------
 exports.teacherSignup = async (req, res) => {
@@ -61,6 +62,40 @@ exports.teacherSignup = async (req, res) => {
       return res.status(400).json({ message: 'Email already registered' });
     }
 
+    // ✅ Convert subject NAMES to IDs
+    if (!subjectSpecialization || !Array.isArray(subjectSpecialization) || subjectSpecialization.length === 0) {
+      return res.status(400).json({ message: 'At least one subject specialization is required' });
+    }
+
+    // Find all subjects and match by name (case-insensitive)
+    const allSubjects = await Subject.find({});
+    const foundSubjects = [];
+
+    for (const requestedName of subjectSpecialization) {
+      const subject = allSubjects.find(s => 
+        s.subjectName.toLowerCase().includes(requestedName.toLowerCase()) ||
+        requestedName.toLowerCase().includes(s.subjectName.toLowerCase())
+      );
+      
+      if (subject) {
+        foundSubjects.push(subject);
+      }
+    }
+
+    // Check if all requested subjects were found
+    if (foundSubjects.length !== subjectSpecialization.length) {
+      const missingSubjects = subjectSpecialization.filter(reqName => 
+        !foundSubjects.some(subj => 
+          subj.subjectName.toLowerCase().includes(reqName.toLowerCase())
+        )
+      );
+      return res.status(400).json({ 
+        message: `Invalid subjects: ${missingSubjects.join(', ')}. Available subjects: ${allSubjects.map(s => s.subjectName).join(', ')}` 
+      });
+    }
+
+    const subjectIds = foundSubjects.map(subject => subject._id);
+
     // ✅ Password hashing
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(password, salt);
@@ -74,14 +109,13 @@ exports.teacherSignup = async (req, res) => {
       email: email.toLowerCase(),
       phone,
       countryRegion,
-      subjectSpecialization,
+      subjectSpecialization: subjectIds,
       qualification,
       idProofUrl,
       passwordHash,
       role: 'teacher',
       teacherStatus: 'pending',
       isEmailVerified: true
-      // ✅ No roleNumber field for teachers
     });
 
     await teacher.save();
@@ -95,7 +129,7 @@ exports.teacherSignup = async (req, res) => {
       <p><strong>Details:</strong></p>
       <ul>
         <li>Email: ${email}</li>
-        <li>Subject: ${subjectSpecialization}</li>
+        <li>Subjects: ${foundSubjects.map(s => s.subjectName).join(', ')}</li>
         <li>Qualification: ${qualification}</li>
       </ul>
       <p>Thank you for your patience.</p>
@@ -110,14 +144,8 @@ exports.teacherSignup = async (req, res) => {
   } catch (err) {
     console.error('Teacher Signup Error:', err);
     
-    // ✅ Handle specific MongoDB errors
     if (err.code === 11000) {
-      if (err.keyPattern && err.keyPattern.roleNumber) {
-        return res.status(500).json({ 
-          message: 'Database configuration error. Please contact administrator.' 
-        });
-      }
-      return res.status(400).json({ message: 'Email already exists' });
+      return res.status(400).json({ message: 'Email already registered' });
     }
     
     return res.status(500).json({ message: 'Server error', error: err.message });
@@ -190,22 +218,7 @@ exports.teacherLogin = async (req, res) => {
   }
 };
 
-// ---------------------- TEACHER PROFILE ----------------------
-exports.getTeacherProfile = async (req, res) => {
-  try {
-    const teacher = await User.findById(req.user.id)
-      .select('-passwordHash -otp');
-    
-    if (!teacher || teacher.role !== 'teacher') {
-      return res.status(404).json({ message: 'Teacher not found' });
-    }
 
-    return res.json(teacher);
-  } catch (err) {
-    console.error('Teacher Profile Error:', err);
-    return res.status(500).json({ message: 'Server error', error: err.message });
-  }
-};
 
 const multer = require('multer');          // Namrata My addition for notes uploading
 const Note = require('../models/Note');
@@ -236,40 +249,73 @@ exports.uploadMiddleware = upload.single('file');
 // ---------------------- UPLOAD NOTE ----------------------
 exports.uploadNote = async (req, res) => {
   try {
-    const { title, description, subjectId, classId } = req.body;
-    const teacherId = req.user?.id;
+    const { title, description, subjectName, className } = req.body; // Changed to names
+    const teacherId = req.user.id;
+
+    if (!title || !subjectName || !className) {
+      return res.status(400).json({ message: 'Title, subject name, and class name are required' });
+    }
 
     if (!req.file) {
       return res.status(400).json({ message: 'File is required' });
     }
 
+    // ✅ Find class by name
+    const classData = await Class.findOne({ className: className });
+    if (!classData) {
+      return res.status(400).json({ message: `Class ${className} not found` });
+    }
+
+    // ✅ Find subject by name for this class
+    const subject = await Subject.findOne({
+      subjectName: new RegExp(`^${subjectName}$`, 'i'),
+      class: classData._id
+    });
+
+    if (!subject) {
+      return res.status(400).json({ 
+        message: `Subject ${subjectName} not found for class ${className}. Available subjects: ${await getAvailableSubjects(classData._id)}` 
+      });
+    }
+
+    // Create note with the found IDs
     const note = new Note({
       title,
       description,
+      subject: subject._id,
+      class: classData._id,
       uploadedBy: teacherId,
-      subject: subjectId || undefined,
-      class: classId || undefined,
+      fileName: req.file.originalname,
       fileData: req.file.buffer,
       fileMimeType: req.file.mimetype,
-      fileName: req.file.originalname,
-      fileSizeMB: +(req.file.size / (1024 * 1024)).toFixed(2),
-      status: 'pending',
+      fileSize: req.file.size,
+      status: 'pending'
     });
 
     await note.save();
 
-    // ✅ Optional: Notify teacher or admin using your existing mailer utils
-    // await sendCustomEmail(adminEmail, 'New Note Pending Approval', `Teacher ${req.user.email} uploaded ${note.title}`);
-
     return res.status(201).json({
-      message: 'Note uploaded successfully. Awaiting admin approval.',
-      noteId: note._id,
+      message: 'Note uploaded successfully. Waiting for admin approval.',
+      note: {
+        id: note._id,
+        title: note.title,
+        subject: subject.subjectName,
+        class: classData.className,
+        status: note.status
+      }
     });
+
   } catch (error) {
     console.error('Upload Note Error:', error);
     return res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
+
+// Helper function to get available subjects for a class
+async function getAvailableSubjects(classId) {
+  const subjects = await Subject.find({ class: classId });
+  return subjects.map(s => s.subjectName).join(', ');
+}
 
 // ---------------------- GET MY NOTES ----------------------
 exports.getMyNotes = async (req, res) => {
@@ -435,5 +481,66 @@ exports.getMyMeetings = async (req, res) => {
   } catch (error) {
     console.error('Get My Meetings Error:', error);
     return res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// ---------------------- UPDATE TEACHER SUBJECTS ----------------------
+exports.updateTeacherSubjects = async (req, res) => {
+  try {
+    const { subjectSpecialization } = req.body;
+    const teacherId = req.user.id;
+
+    const subjectNames = subjectSpecialization.map(name => new RegExp(`^${name}$`, 'i'));
+    const subjects = await Subject.find({ 
+      subjectName: { $in: subjectNames } 
+    });
+
+    if (subjects.length !== subjectSpecialization.length) {
+      const missingSubjects = subjectSpecialization.filter(name => 
+        !subjects.some(subject => subject.subjectName.toLowerCase() === name.toLowerCase())
+      );
+      return res.status(400).json({ 
+        message: `Invalid subjects: ${missingSubjects.join(', ')}` 
+      });
+    }
+
+    const subjectIds = subjects.map(subject => subject._id);
+
+    const teacher = await User.findByIdAndUpdate(
+      teacherId,
+      { subjectSpecialization: subjectIds },
+      { new: true }
+    ).populate('subjectSpecialization', 'subjectName subjectCode class');
+
+    return res.json({
+      message: 'Teacher subjects updated successfully',
+      teacher: {
+        id: teacher._id,
+        fullName: teacher.fullName,
+        subjectSpecialization: teacher.subjectSpecialization
+      }
+    });
+
+  } catch (err) {
+    console.error('Update Teacher Subjects Error:', err);
+    return res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
+
+
+exports.getTeacherProfile = async (req, res) => {
+  try {
+    const teacher = await User.findById(req.user.id)
+      .populate('subjectSpecialization', 'subjectName subjectCode class')
+      .select('-passwordHash -otp');
+    
+    if (!teacher || teacher.role !== 'teacher') {
+      return res.status(404).json({ message: 'Teacher not found' });
+    }
+
+    return res.json(teacher);
+  } catch (err) {
+    console.error('Teacher Profile Error:', err);
+    return res.status(500).json({ message: 'Server error', error: err.message });
   }
 };

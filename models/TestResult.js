@@ -1,36 +1,26 @@
 const mongoose = require('mongoose');
-const { Schema } = mongoose;
 
-/**
- * Schema for storing the result of a test taken by a student.
- */
-const testResultSchema = new Schema(
-  {
-    studentID: {
-      type: Schema.Types.ObjectId,
-      ref: 'User', // References the User model
-      required: true,
-    },
-    testID: {
-      type: Schema.Types.ObjectId,
-      ref: 'Test',
-      required: true,
-    },
-
-    marks: {
-      type: Number,
-      required: true,
-      min: 0, // Marks can't be negative
-    },
+const testResultSchema = new mongoose.Schema({
+  studentID: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
   },
-  {
-    // Automatically adds createdAt and updatedAt fields
-    timestamps: true,
+  testID: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Test',
+    required: true
+  },
+  marks: {
+    type: Number,
+    required: true,
+    min: 0
   }
-);
+}, { 
+  timestamps: true 
+});
 
+// Ensure one result per student per test
 testResultSchema.index({ studentID: 1, testID: 1 }, { unique: true });
 
-const TestResult = mongoose.model('TestResult', testResultSchema);
-
-module.exports = TestResult;
+module.exports = mongoose.model('TestResult', testResultSchema);

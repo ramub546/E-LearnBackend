@@ -1,6 +1,9 @@
 const User = require('../models/User');
 const Note = require('../models/Note');
 const Subject = require('../models/Subject');
+const TestResult = require('../models/TestResult');
+const Test = require('../models/Test');
+
 // ---------------------- GET STUDENT NOTES BY SUBJECT ----------------------
 exports.getStudentNotes = async (req, res) => {
   try {
@@ -170,6 +173,77 @@ exports.downloadAssignment = async (req, res) => {
 
   } catch (error) {
     console.error('Download Assignment Error:', error);
+    return res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// ---------------------- GET MY MARKS BY SUBJECT (Student) ----------------------
+exports.getMyMarksBySubject = async (req, res) => {
+  try {
+    const studentId = req.user.id;
+    const { subjectName } = req.params;
+
+    if (!subjectName) {
+      return res.status(400).json({ 
+        message: 'Subject name is required' 
+      });
+    }
+
+    // Find the student to get their class
+    const student = await User.findById(studentId).populate('class');
+    if (!student) {
+      return res.status(404).json({ message: 'Student not found' });
+    }
+
+    // Find subject for the student's class
+    const subject = await Subject.findOne({
+      subjectName: { $regex: new RegExp(`^${subjectName}$`, 'i') },
+      class: student.class._id
+    });
+
+    if (!subject) {
+      return res.status(404).json({ 
+        message: `Subject "${subjectName}" not found for your class` 
+      });
+    }
+
+    // Get all tests for this subject
+    const tests = await Test.find({ 
+      subject: subject._id,
+      class: student.class._id
+    });
+
+    const testIds = tests.map(test => test._id);
+
+    // Get marks for these tests
+    const marks = await TestResult.find({ 
+      studentID: studentId,
+      testID: { $in: testIds }
+    })
+    .populate('testID', 'title totalMarks testDate')
+    .sort({ 'testID.testDate': -1 });
+
+    // Format the response
+    const formattedMarks = marks.map(result => ({
+      id: result._id,
+      testTitle: result.testID.title,
+      marks: result.marks,
+      totalMarks: result.testID.totalMarks,
+      percentage: ((result.marks / result.testID.totalMarks) * 100).toFixed(2),
+      testDate: result.testID.testDate,
+      subject: subject.subjectName
+    }));
+
+    return res.json({
+      student: student.fullName,
+      class: student.class.className,
+      subject: subject.subjectName,
+      totalTests: formattedMarks.length,
+      marks: formattedMarks
+    });
+
+  } catch (error) {
+    console.error('Get My Marks By Subject Error:', error);
     return res.status(500).json({ message: 'Server error', error: error.message });
   }
 };

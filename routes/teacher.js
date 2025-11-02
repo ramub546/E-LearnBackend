@@ -4,14 +4,17 @@ const router = express.Router();
 const multer = require('multer');
 const teacherController = require('../controllers/teacherController');
 const { uploadAssignmentMiddleware, uploadAssignment, getMyAssignments, downloadAssignment } = require('../controllers/teacherController');
-
+const {  getClassMarks, getStudentMarks,getMyUploadedMarks } = require('../controllers/teacherController');
 const {
   uploadNote,
   getMyNotes,
   downloadNote,
   scheduleMeeting,
   startInstantMeeting,
-  getMyMeetings
+  getMyMeetings,
+  getStudentsByClassAndSubject,
+  uploadMarksByRollNumber,
+  uploadMultipleMarksByRollNumber
 } = require('../controllers/teacherController');
 const { protect } = require('../middleware/authMiddleware'); // adjust path as needed
 
@@ -53,6 +56,16 @@ router.get('/my-meetings', protect, teacherController.getMyMeetings);
 router.post('/upload-assignment', protect, uploadAssignmentMiddleware, uploadAssignment);
 router.get('/my-assignments', protect, getMyAssignments);
 router.get('/download-assignment/:id', protect, downloadAssignment);
+// Add these routes
 
+// Change from params to body-based routes
+router.post('/student-marks', protect, teacherController.getStudentMarks);
+router.post('/class-marks', protect, teacherController.getClassMarks);
+router.get('/my-uploaded-marks', protect, teacherController.getMyUploadedMarks);
+// Add this route to get students by class and subject
+router.get('/students/:className/:subjectName', protect, teacherController.getStudentsByClassAndSubject);
 
+// Add these routes for roll number based marks upload
+router.post('/upload-marks-rollnumber', protect, teacherController.uploadMarksByRollNumber);
+router.post('/upload-multiple-marks-rollnumber', protect, teacherController.uploadMultipleMarksByRollNumber);
 module.exports = router;

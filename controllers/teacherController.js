@@ -8,6 +8,8 @@ const Meeting = require('../models/Meeting');
 const Class = require('../models/Class');
 const Subject = require('../models/Subject');
 const Assignment = require('../models/Assignment'); // ✅ ADD THIS LINE
+const TestResult = require('../models/TestResult');
+const Test = require('../models/Test'); // For clarity
 
 // ---------------------- TEACHER SIGNUP REQUEST ----------------------
 exports.teacherSignup = async (req, res) => {
@@ -683,5 +685,573 @@ exports.getTeacherProfile = async (req, res) => {
   } catch (err) {
     console.error('Teacher Profile Error:', err);
     return res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
+
+
+// ---------------------- GET STUDENTS BY CLASS AND SUBJECT ----------------------
+exports.getStudentsByClassAndSubject = async (req, res) => {
+  try {
+    const { className, subjectName } = req.params;
+    const teacherId = req.user.id;
+
+    if (!className || !subjectName) {
+      return res.status(400).json({ 
+        message: 'Class name and subject name are required' 
+      });
+    }
+
+    // Find class
+    const cleanClassName = className.toString().replace(/"/g, '').trim();
+    const classData = await Class.findOne({ className: cleanClassName });
+    if (!classData) {
+      return res.status(400).json({ message: `Class "${cleanClassName}" not found` });
+    }
+
+    // Find subject
+    const subject = await Subject.findOne({
+      subjectName: { $regex: new RegExp(`^${subjectName}$`, 'i') },
+      class: classData._id
+    });
+
+    if (!subject) {
+      return res.status(400).json({ 
+        message: `Subject "${subjectName}" not found for class ${cleanClassName}` 
+      });
+    }
+
+    // Get students from that class
+    const students = await User.find({ 
+      role: 'student', 
+      class: classData._id 
+    }).select('_id fullName email rollNumber class');
+
+    return res.json({
+      class: classData.className,
+      subject: subject.subjectName,
+      subjectId: subject._id,
+      students: students,
+      totalStudents: students.length
+    });
+
+  } catch (error) {
+    console.error('Get Students By Class & Subject Error:', error);
+    return res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// ---------------------- UPLOAD MARKS BY ROLL NUMBER ----------------------
+// ---------------------- UPLOAD MARKS BY ROLL NUMBER ----------------------
+exports.uploadMarksByRollNumber = async (req, res) => {
+  try {
+    const { 
+      rollNumber,
+      subjectName, 
+      testTitle, 
+      obtainedMarks, 
+      totalMarks 
+    } = req.body;
+
+    const teacherId = req.user.id;
+
+    if (!rollNumber || !subjectName || !testTitle || !obtainedMarks || !totalMarks) {
+      return res.status(400).json({ 
+        message: 'Roll number, subject name, test title, obtained marks, and total marks are required' 
+      });
+    }
+
+    // Find student by roleNumber
+    const student = await User.findOne({ 
+      roleNumber: rollNumber.toString().trim(),
+      role: 'student' 
+    });
+    
+    if (!student) {
+      return res.status(404).json({ message: 'Student not found with this roll number' });
+    }
+
+    // Find student's class
+    const classData = await Class.findById(student.class);
+    if (!classData) {
+      return res.status(400).json({ message: 'Student class not found' });
+    }
+
+    // Find subject for the student's class
+    const subject = await Subject.findOne({
+      subjectName: { $regex: new RegExp(`^${subjectName}$`, 'i') },
+      class: classData._id
+    });
+
+    if (!subject) {
+      return res.status(400).json({ 
+        message: `Subject "${subjectName}" not found for class ${classData.className}` 
+      });
+    }
+
+    // Check if marks don't exceed total marks
+    if (parseInt(obtainedMarks) > parseInt(totalMarks)) {
+      return res.status(400).json({ 
+        message: `Obtained marks (${obtainedMarks}) cannot exceed total marks (${totalMarks})` 
+      });
+    }
+
+    // ✅ FIXED: Create or find test with proper validation
+    let test = await Test.findOne({
+      title: testTitle,
+      subject: subject._id,
+      class: classData._id,
+      createdBy: teacherId
+    });
+
+    if (!test) {
+      // Verify teacher exists
+      const teacher = await User.findById(teacherId);
+      if (!teacher || teacher.role !== 'teacher') {
+        return res.status(404).json({ message: 'Teacher not found' });
+      }
+
+      // Create test
+      test = new Test({
+        title: testTitle,
+        subject: subject._id,
+        class: classData._id,
+        totalMarks: parseInt(totalMarks),
+        testDate: new Date(),
+        createdBy: teacherId
+      });
+      
+      await test.save();
+    }
+
+    // Create or update test result
+    const testResult = await TestResult.findOneAndUpdate(
+      { studentID: student._id, testID: test._id },
+      { 
+        marks: parseInt(obtainedMarks),
+      },
+      { 
+        new: true, 
+        upsert: true,
+        runValidators: true 
+      }
+    ).populate('studentID', 'fullName email roleNumber class')
+     .populate('testID');
+
+    // Calculate percentage
+    const percentage = ((testResult.marks / test.totalMarks) * 100).toFixed(2);
+
+    return res.status(201).json({
+      message: 'Marks uploaded successfully',
+      result: {
+        id: testResult._id,
+        student: testResult.studentID.fullName,
+        rollNumber: testResult.studentID.roleNumber,
+        class: classData.className,
+        subject: subject.subjectName,
+        testTitle: test.title,
+        obtainedMarks: testResult.marks,
+        totalMarks: test.totalMarks,
+        percentage: percentage
+      }
+    });
+
+  } catch (error) {
+    console.error('Upload Marks By Roll Number Error:', error);
+    if (error.code === 11000) {
+      return res.status(400).json({ message: 'Marks already uploaded for this student and test' });
+    }
+    return res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// ---------------------- UPLOAD MULTIPLE MARKS BY ROLL NUMBERS ----------------------
+exports.uploadMultipleMarksByRollNumber = async (req, res) => {
+  try {
+    const { 
+      subjectName, 
+      testTitle, 
+      totalMarks,
+      marksData // Array of { rollNumber, obtainedMarks }
+    } = req.body;
+
+    const teacherId = req.user.id;
+
+    if (!subjectName || !testTitle || !totalMarks || !marksData || !Array.isArray(marksData)) {
+      return res.status(400).json({ 
+        message: 'Subject name, test title, total marks, and marks data array are required' 
+      });
+    }
+
+    const results = [];
+    const errors = [];
+
+    // Process each student's marks
+    for (const mark of marksData) {
+      try {
+        const { rollNumber, obtainedMarks } = mark;
+
+        if (!rollNumber || obtainedMarks === undefined) {
+          errors.push(`Missing roll number or marks for entry: ${JSON.stringify(mark)}`);
+          continue;
+        }
+
+        // ✅ FIX: Find student by roleNumber (not rollNumber)
+        const student = await User.findOne({ 
+          roleNumber: rollNumber.toString().trim(),  // CHANGED: rollNumber → roleNumber
+          role: 'student' 
+        });
+
+        if (!student) {
+          errors.push(`Student not found with roll number: ${rollNumber}`);
+          continue;
+        }
+
+        // Find student's class
+        const classData = await Class.findById(student.class);
+        if (!classData) {
+          errors.push(`Class not found for student: ${rollNumber}`);
+          continue;
+        }
+
+        // Find subject for the student's class
+        const subject = await Subject.findOne({
+          subjectName: { $regex: new RegExp(`^${subjectName}$`, 'i') },
+          class: classData._id
+        });
+
+        if (!subject) {
+          errors.push(`Subject "${subjectName}" not found for class ${classData.className} (Roll: ${rollNumber})`);
+          continue;
+        }
+
+        // Check if marks don't exceed total marks
+        if (parseInt(obtainedMarks) > parseInt(totalMarks)) {
+          errors.push(`Marks (${obtainedMarks}) exceed total marks for roll number: ${rollNumber}`);
+          continue;
+        }
+
+        // Create or find test
+        let test = await Test.findOne({
+          title: testTitle,
+          subject: subject._id,
+          class: classData._id,
+          createdBy: teacherId
+        });
+
+        if (!test) {
+          test = new Test({
+            title: testTitle,
+            subject: subject._id,
+            class: classData._id,
+            totalMarks: parseInt(totalMarks),
+            testDate: new Date(),
+            createdBy: teacherId
+          });
+          await test.save();
+        }
+
+        // Create or update test result
+        const testResult = await TestResult.findOneAndUpdate(
+          { studentID: student._id, testID: test._id },
+          { 
+            marks: parseInt(obtainedMarks),
+          },
+          { 
+            new: true, 
+            upsert: true,
+            runValidators: true 
+          }
+        ).populate('studentID', 'fullName email roleNumber');
+
+        const percentage = ((testResult.marks / test.totalMarks) * 100).toFixed(2);
+
+        results.push({
+          student: testResult.studentID.fullName,
+          rollNumber: testResult.studentID.roleNumber,  // CHANGED: rollNumber → roleNumber
+          class: classData.className,
+          obtainedMarks: testResult.marks,
+          totalMarks: test.totalMarks,
+          percentage: percentage
+        });
+
+      } catch (error) {
+        errors.push(`Error for roll number ${mark.rollNumber}: ${error.message}`);
+      }
+    }
+
+    return res.status(201).json({
+      message: `Marks uploaded for ${results.length} students`,
+      subject: subjectName,
+      testTitle: testTitle,
+      totalMarks: totalMarks,
+      successful: results,
+      errors: errors,
+      totalProcessed: results.length + errors.length
+    });
+
+  } catch (error) {
+    console.error('Upload Multiple Marks By Roll Number Error:', error);
+    return res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// ---------------------- GET STUDENTS BY CLASS AND SUBJECT ----------------------
+// ---------------------- GET STUDENTS BY CLASS AND SUBJECT ----------------------
+exports.getStudentsByClassAndSubject = async (req, res) => {
+  try {
+    const { className, subjectName } = req.params;
+    const teacherId = req.user.id;
+
+    if (!className || !subjectName) {
+      return res.status(400).json({ 
+        message: 'Class name and subject name are required' 
+      });
+    }
+
+    // Find class
+    const cleanClassName = className.toString().replace(/"/g, '').trim();
+    const classData = await Class.findOne({ className: cleanClassName });
+    if (!classData) {
+      return res.status(400).json({ message: `Class "${cleanClassName}" not found` });
+    }
+
+    // Find subject
+    const subject = await Subject.findOne({
+      subjectName: { $regex: new RegExp(`^${subjectName}$`, 'i') },
+      class: classData._id
+    });
+
+    if (!subject) {
+      return res.status(400).json({ 
+        message: `Subject "${subjectName}" not found for class ${cleanClassName}` 
+      });
+    }
+
+    // Get students from that class - FIXED: use roleNumber instead of rollNumber
+    const students = await User.find({ 
+      role: 'student', 
+      class: classData._id 
+    }).select('_id fullName email roleNumber class'); // ✅ CHANGED: rollNumber → roleNumber
+
+    return res.json({
+      class: classData.className,
+      subject: subject.subjectName,
+      subjectId: subject._id,
+      students: students,
+      totalStudents: students.length
+    });
+
+  } catch (error) {
+    console.error('Get Students By Class & Subject Error:', error);
+    return res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+
+// ---------------------- GET STUDENT MARKS BY ROLL NUMBER ----------------------
+exports.getStudentMarks = async (req, res) => {
+  try {
+    const { rollNumber } = req.body;
+    
+    if (!rollNumber) {
+      return res.status(400).json({ message: 'Roll number is required in request body' });
+    }
+
+    // Find student by roll number
+    const student = await User.findOne({ 
+      roleNumber: rollNumber.toString().trim(),
+      role: 'student' 
+    });
+
+    if (!student) {
+      return res.status(404).json({ message: 'Student not found with this roll number' });
+    }
+
+    // Get all marks for this student
+    const marks = await TestResult.find({ studentID: student._id })
+      .populate('testID', 'title totalMarks testDate')
+      .populate({
+        path: 'testID',
+        populate: {
+          path: 'subject',
+          select: 'subjectName'
+        }
+      })
+      .populate({
+        path: 'testID', 
+        populate: {
+          path: 'class',
+          select: 'className'
+        }
+      })
+      .sort({ 'testID.testDate': -1 });
+
+    // Format response
+    const formattedMarks = marks.map(result => ({
+      id: result._id,
+      testTitle: result.testID.title,
+      marks: result.marks,
+      totalMarks: result.testID.totalMarks,
+      percentage: ((result.marks / result.testID.totalMarks) * 100).toFixed(2),
+      testDate: result.testID.testDate,
+      subject: result.testID.subject.subjectName,
+      class: result.testID.class.className
+    }));
+
+    return res.json({
+      student: {
+        id: student._id,
+        fullName: student.fullName,
+        rollNumber: student.roleNumber,
+        class: student.class
+      },
+      totalTests: formattedMarks.length,
+      marks: formattedMarks
+    });
+
+  } catch (error) {
+    console.error('Get Student Marks Error:', error);
+    return res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// ---------------------- GET CLASS MARKS ----------------------
+exports.getClassMarks = async (req, res) => {
+  try {
+    const { className, subjectName } = req.body;
+    const teacherId = req.user.id;
+
+    if (!className || !subjectName) {
+      return res.status(400).json({ 
+        message: 'Class name and subject name are required in request body' 
+      });
+    }
+
+    // Find class
+    const cleanClassName = className.toString().replace(/"/g, '').trim();
+    const classData = await Class.findOne({ className: cleanClassName });
+    if (!classData) {
+      return res.status(400).json({ message: `Class "${cleanClassName}" not found` });
+    }
+
+    // Find subject
+    const subject = await Subject.findOne({
+      subjectName: { $regex: new RegExp(`^${subjectName}$`, 'i') },
+      class: classData._id
+    });
+
+    if (!subject) {
+      return res.status(400).json({ 
+        message: `Subject "${subjectName}" not found for class ${cleanClassName}` 
+      });
+    }
+
+    // Get all tests for this class and subject
+    const tests = await Test.find({ 
+      class: classData._id,
+      subject: subject._id
+    });
+
+    const testIds = tests.map(test => test._id);
+
+    // Get all marks for these tests
+    const marks = await TestResult.find({ 
+      testID: { $in: testIds }
+    })
+    .populate('studentID', 'fullName roleNumber')
+    .populate('testID', 'title totalMarks testDate')
+    .sort({ 'testID.testDate': -1 });
+
+    // Group marks by student
+    const studentMarks = {};
+    marks.forEach(result => {
+      const studentId = result.studentID._id.toString();
+      if (!studentMarks[studentId]) {
+        studentMarks[studentId] = {
+          student: {
+            id: result.studentID._id,
+            fullName: result.studentID.fullName,
+            rollNumber: result.studentID.roleNumber
+          },
+          tests: []
+        };
+      }
+      
+      studentMarks[studentId].tests.push({
+        testTitle: result.testID.title,
+        marks: result.marks,
+        totalMarks: result.testID.totalMarks,
+        percentage: ((result.marks / result.testID.totalMarks) * 100).toFixed(2),
+        testDate: result.testID.testDate
+      });
+    });
+
+    return res.json({
+      class: classData.className,
+      subject: subject.subjectName,
+      totalStudents: Object.keys(studentMarks).length,
+      totalTests: tests.length,
+      studentMarks: Object.values(studentMarks)
+    });
+
+  } catch (error) {
+    console.error('Get Class Marks Error:', error);
+    return res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// ---------------------- GET MY UPLOADED MARKS ----------------------
+exports.getMyUploadedMarks = async (req, res) => {
+  try {
+    const teacherId = req.user.id;
+    
+    // Get all tests created by this teacher
+    const tests = await Test.find({ createdBy: teacherId });
+    const testIds = tests.map(test => test._id);
+
+    // Get all marks for these tests
+    const marks = await TestResult.find({ testID: { $in: testIds } })
+      .populate('studentID', 'fullName roleNumber')
+      .populate('testID', 'title totalMarks testDate')
+      .populate({
+        path: 'testID',
+        populate: {
+          path: 'subject',
+          select: 'subjectName'
+        }
+      })
+      .populate({
+        path: 'testID',
+        populate: {
+          path: 'class', 
+          select: 'className'
+        }
+      })
+      .sort({ 'testID.testDate': -1 });
+
+    // Format response
+    const formattedMarks = marks.map(result => ({
+      id: result._id,
+      student: {
+        fullName: result.studentID.fullName,
+        rollNumber: result.studentID.roleNumber
+      },
+      testTitle: result.testID.title,
+      marks: result.marks,
+      totalMarks: result.testID.totalMarks,
+      percentage: ((result.marks / result.testID.totalMarks) * 100).toFixed(2),
+      testDate: result.testID.testDate,
+      subject: result.testID.subject.subjectName,
+      class: result.testID.class.className
+    }));
+
+    return res.json({
+      totalUploaded: formattedMarks.length,
+      marks: formattedMarks
+    });
+
+  } catch (error) {
+    console.error('Get My Uploaded Marks Error:', error);
+    return res.status(500).json({ message: 'Server error', error: error.message });
   }
 };

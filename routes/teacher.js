@@ -69,3 +69,8 @@ router.get('/students/:className/:subjectName', protect, teacherController.getSt
 router.post('/upload-marks-rollnumber', protect, teacherController.uploadMarksByRollNumber);
 router.post('/upload-multiple-marks-rollnumber', protect, teacherController.uploadMultipleMarksByRollNumber);
 module.exports = router;
+
+// Add Subject feature Neww
+router.post('/add-subject', protect, teacherController.addScheduledSubject);
+// Optional: Get subjects list for selected class
+router.get('/subjects/:classId', protect, teacherController.getSubjectsByClass);

@@ -1,5 +1,6 @@
 const User = require('../models/User');
 const { sendCustomEmail } = require('../utils/mailer');
+const ScheduledSubject = require('../models/scheduledSubject');
 
 // ---------------------- GET PENDING TEACHERS ----------------------
 exports.getPendingTeachers = async (req, res) => {
@@ -382,5 +383,41 @@ exports.rejectNote = async (req, res) => {
   } catch (error) {
     console.error('Reject Note Error:', error);
     return res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+//Neww
+// ✅ Get all pending scheduled subjects
+exports.getPendingScheduledSubjects = async (req, res) => {
+  try {
+    const pendingSubjects = await ScheduledSubject.find({ status: 'pending' })
+      .populate('teacher', 'fullName email')   // teacher details
+      .populate('class', 'className')          // class details
+      .populate('subject', 'subjectName');     // subject details
+
+    res.status(200).json({ pendingSubjects });
+  } catch (error) {
+    console.error('Error fetching pending subjects:', error);
+    res.status(500).json({ message: 'Server error', error });
+  }
+};
+
+// Approve a scheduled subject request Neww
+exports.approveScheduledSubject = async (req, res) => {
+  try {
+    const { scheduledId } = req.body;
+
+    const scheduled = await ScheduledSubject.findById(scheduledId);
+    if (!scheduled) return res.status(404).json({ message: 'Scheduled request not found' });
+
+    scheduled.status = 'approved';
+    scheduled.approvedAt = new Date();
+
+    await scheduled.save();
+
+    res.status(200).json({ message: 'Subject approved', data: scheduled });
+  } catch (error) {
+    console.error('Error approving subject:', error);
+    res.status(500).json({ message: 'Server error', error });
   }
 };

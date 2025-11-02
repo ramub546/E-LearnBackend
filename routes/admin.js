@@ -2,6 +2,9 @@ const express = require('express');   //Namrata
 const router = express.Router();
 const { getPendingNotes, approveNote, rejectNote } = require('../controllers/adminController');
 const { protect } = require('../middleware/authMiddleware'); // JWT auth middleware
+const adminController = require('../controllers/adminController'); //Neww
+
+
 
 // ✅ Only admin middleware
 const adminOnly = (req, res, next) => {
@@ -15,5 +18,9 @@ const adminOnly = (req, res, next) => {
 router.get('/notes/pending', protect, adminOnly, getPendingNotes);
 router.patch('/notes/:id/approve', protect, adminOnly, approveNote);
 router.patch('/notes/:id/reject', protect, adminOnly, rejectNote);
+
+//Neww
+router.get('/subjects/pending', protect, adminOnly, adminController.getPendingScheduledSubjects);
+router.post('/subjects/approve', protect, adminOnly, adminController.approveScheduledSubject);
 
 module.exports = router;

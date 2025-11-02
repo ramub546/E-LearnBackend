@@ -10,7 +10,7 @@ const Subject = require('../models/Subject');
 const Assignment = require('../models/Assignment'); // ✅ ADD THIS LINE
 const TestResult = require('../models/TestResult');
 const Test = require('../models/Test'); // For clarity
-
+const ScheduledSubject = require('../models/scheduledSubject'); //Neww
 // ---------------------- TEACHER SIGNUP REQUEST ----------------------
 exports.teacherSignup = async (req, res) => {
   try {
@@ -1217,5 +1217,81 @@ exports.getMyUploadedMarks = async (req, res) => {
   } catch (error) {
     console.error('Get My Uploaded Marks Error:', error);
     return res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+
+//Neww
+// ------------------- ADD SUBJECT REQUEST -------------------
+exports.addScheduledSubject = async (req, res) => {
+  try {
+    const { email, classId, subjectName } = req.body;
+
+    // 1️⃣ Find teacher by email
+    const teacher = await User.findOne({ email, role: 'teacher' });
+    if (!teacher) return res.status(404).json({ message: 'Teacher not found' });
+
+    // 2️⃣ Find class
+    const selectedClass = await Class.findById(classId).populate('subjects');
+    if (!selectedClass) return res.status(404).json({ message: 'Class not found' });
+
+    // 3️⃣ Find subject in that class
+    const subject = await Subject.findOne({ subjectName, class: classId });
+    if (!subject)
+      return res.status(400).json({ message: 'Subject not found in class list' });
+
+    // 4️⃣ Check if already requested
+    const existing = await ScheduledSubject.findOne({
+      teacher: teacher._id,
+      class: classId,
+      subject: subject._id,
+    });
+    if (existing)
+      return res.status(400).json({ message: 'You already requested this subject' });
+
+    // 5️⃣ Create new scheduled subject
+    const newScheduled = await ScheduledSubject.create({
+      teacher: teacher._id,
+      class: classId,
+      subject: subject._id,
+      status: 'pending',
+    });
+
+    res.status(201).json({
+      message: 'Subject request submitted. Waiting for admin approval.',
+      data: newScheduled,
+    });
+  } catch (error) {
+    console.error('Error adding subject:', error);
+    res.status(500).json({ message: 'Server error', error });
+  }
+};
+
+// ------------------- SUBJECT LIST FOR SELECTED CLASS (Approved Only) -------------------
+exports.getSubjectsByClass = async (req, res) => {
+  try {
+    const { classId } = req.params;
+
+    // Fetch only approved scheduled subjects for this class
+    const approvedSubjects = await ScheduledSubject.find({ class: classId, status: 'approved' })
+      .populate('subject', 'subjectName')   // Get subject name
+      .populate('teacher', 'fullName email'); // Optional: include teacher info
+
+    if (!approvedSubjects || approvedSubjects.length === 0) {
+      return res.status(200).json({ subjects: [] }); // Return empty array if none approved
+    }
+
+    // Map to simple array to send only necessary info
+    const subjectsForFrontend = approvedSubjects.map((item) => ({
+      subjectId: item.subject._id,
+      subjectName: item.subject.subjectName,
+      teacherName: item.teacher.fullName,
+      teacherEmail: item.teacher.email,
+    }));
+
+    res.status(200).json({ subjects: subjectsForFrontend });
+  } catch (error) {
+    console.error('Error fetching subjects:', error);
+    res.status(500).json({ message: 'Server error', error });
   }
 };

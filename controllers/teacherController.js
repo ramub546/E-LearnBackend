@@ -19,14 +19,13 @@ exports.teacherSignup = async (req, res) => {
       email,
       phone,
       countryRegion,
-      subjectSpecialization,
       qualification,
       password,
       confirmPassword
     } = req.body;
 
     // ✅ Required field check
-    if (!fullName || !email || !phone || !countryRegion || !subjectSpecialization || !qualification || !password || !confirmPassword) {
+    if (!fullName || !email || !phone || !countryRegion  || !qualification || !password || !confirmPassword) {
       return res.status(400).json({ message: 'Missing required fields' });
     }
 
@@ -65,39 +64,6 @@ exports.teacherSignup = async (req, res) => {
       return res.status(400).json({ message: 'Email already registered' });
     }
 
-    // ✅ Convert subject NAMES to IDs
-    if (!subjectSpecialization || !Array.isArray(subjectSpecialization) || subjectSpecialization.length === 0) {
-      return res.status(400).json({ message: 'At least one subject specialization is required' });
-    }
-
-    // Find all subjects and match by name (case-insensitive)
-    const allSubjects = await Subject.find({});
-    const foundSubjects = [];
-
-    for (const requestedName of subjectSpecialization) {
-      const subject = allSubjects.find(s => 
-        s.subjectName.toLowerCase().includes(requestedName.toLowerCase()) ||
-        requestedName.toLowerCase().includes(s.subjectName.toLowerCase())
-      );
-      
-      if (subject) {
-        foundSubjects.push(subject);
-      }
-    }
-
-    // Check if all requested subjects were found
-    if (foundSubjects.length !== subjectSpecialization.length) {
-      const missingSubjects = subjectSpecialization.filter(reqName => 
-        !foundSubjects.some(subj => 
-          subj.subjectName.toLowerCase().includes(reqName.toLowerCase())
-        )
-      );
-      return res.status(400).json({ 
-        message: `Invalid subjects: ${missingSubjects.join(', ')}. Available subjects: ${allSubjects.map(s => s.subjectName).join(', ')}` 
-      });
-    }
-
-    const subjectIds = foundSubjects.map(subject => subject._id);
 
     // ✅ Password hashing
     const salt = await bcrypt.genSalt(10);
@@ -112,7 +78,6 @@ exports.teacherSignup = async (req, res) => {
       email: email.toLowerCase(),
       phone,
       countryRegion,
-      subjectSpecialization: subjectIds,
       qualification,
       idProofUrl,
       passwordHash,
@@ -132,7 +97,6 @@ exports.teacherSignup = async (req, res) => {
       <p><strong>Details:</strong></p>
       <ul>
         <li>Email: ${email}</li>
-        <li>Subjects: ${foundSubjects.map(s => s.subjectName).join(', ')}</li>
         <li>Qualification: ${qualification}</li>
       </ul>
       <p>Thank you for your patience.</p>

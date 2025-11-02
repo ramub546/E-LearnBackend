@@ -8,6 +8,8 @@ const studentRoutes = require('./routes/student');
 const authRoutes = require('./routes/auth');
 const teacherRoutes = require('./routes/teacher');
 
+const { startScheduledJobs } = require('./config/scheduler.js');
+
 // Initialize app first
 const app = express();
 
@@ -21,10 +23,6 @@ app.use('/api/auth', authRoutes);
 const adminRoutes = require('./routes/admin');
 app.use('/api/admin', adminRoutes);
 app.use('/api/student', studentRoutes);
-
-
-// Connect to database
-connectDB();
 
 // ✅ TEMPORARY FIX: Drop and recreate the index
 const fixRoleNumberIndex = async () => {
@@ -40,22 +38,32 @@ const fixRoleNumberIndex = async () => {
     }
 
     // Create new sparse index
-    await collection.createIndex({ roleNumber: 1 }, { 
-      unique: true, 
-      sparse: true 
-    });
+    await collection.createIndex(
+      { roleNumber: 1 },
+      {
+        unique: true,
+        sparse: true,
+      }
+    );
     console.log('✅ Created new sparse roleNumber index');
   } catch (error) {
     console.log('Index fix completed');
   }
 };
 
-// Call after a short delay to ensure DB is connected
-setTimeout(fixRoleNumberIndex, 2000);
-
 // Test route
 app.get('/', (req, res) => res.send('Student Auth API is running'));
 
 // Start server
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, async () => {
+  console.log(`Server running on port ${PORT}`);
+  // Connect to database
+  await connectDB();
+  // fixRoleNumberIndex
+  await fixRoleNumberIndex();
+
+  // this marks all the students absent (default) at 1:00AM (only from Mon - Sat) - SHUBHAM
+  // You can add more jobs here - SHUBHAM
+  startScheduledJobs();
+});

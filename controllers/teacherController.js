@@ -11,6 +11,11 @@ const Assignment = require('../models/Assignment'); // ✅ ADD THIS LINE
 const TestResult = require('../models/TestResult');
 const Test = require('../models/Test'); // For clarity
 const ScheduledSubject = require('../models/scheduledSubject'); //Neww
+const schedule = require('node-schedule');//forTest
+const Announcement = require('../models/Announcement');
+
+// ... other imports
+
 // ---------------------- TEACHER SIGNUP REQUEST ----------------------
 exports.teacherSignup = async (req, res) => {
   try {
@@ -1293,5 +1298,68 @@ exports.getSubjectsByClass = async (req, res) => {
   } catch (error) {
     console.error('Error fetching subjects:', error);
     res.status(500).json({ message: 'Server error', error });
+  }
+};
+
+
+// Create a new test
+exports.teacherCreateTest = async (req, res) => {
+  try {
+    const { title, subject, class: classId, totalMarks, testDate } = req.body;
+
+    // Validate required fields
+    if (!title || !subject || !classId || !totalMarks) {
+      return res.status(400).json({ success: false, message: 'Title, subject, class, and totalMarks are required.' });
+    }
+
+    let testDateObj;
+
+    if (testDate) {
+      // If testDate is provided, handle both ISO 8601 and "dd-mm-yyyy HH:mm"
+      if (testDate.includes('T')) {
+        // ISO format
+        testDateObj = new Date(testDate);
+      } else {
+        // dd-mm-yyyy HH:mm format
+        const [datePart, timePart] = testDate.split(' ');
+        if (!datePart || !timePart) {
+          return res.status(400).json({ success: false, message: 'Invalid testDate format.' });
+        }
+        const [day, month, year] = datePart.split('-');
+        const [hours, minutes] = timePart.split(':');
+        testDateObj = new Date(year, month - 1, day, hours, minutes);
+      }
+    } else {
+      // If testDate is missing (like from scheduled job), default to current date/time
+      testDateObj = new Date();
+    }
+
+    const newTest = await Test.create({
+      title,
+      subject,
+      class: classId,
+      totalMarks,
+      testDate: testDateObj,
+      createdBy: req.user?._id || null, // handle jobs without a logged-in user
+    });
+
+    res.status(201).json({ success: true, test: newTest });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// Get all tests created by teacher
+exports.getTeacherTests = async (req, res) => {
+  try {
+    const tests = await Test.find({ createdBy: req.user._id })
+      .populate('subject')
+      .populate('class');
+
+    res.status(200).json({ success: true, tests });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: err.message });
   }
 };

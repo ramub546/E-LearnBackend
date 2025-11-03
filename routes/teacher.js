@@ -74,3 +74,9 @@ module.exports = router;
 router.post('/add-subject', protect, teacherController.addScheduledSubject);
 // Optional: Get subjects list for selected class
 router.get('/subjects/:classId', protect, teacherController.getSubjectsByClass);
+
+
+
+router.post('/create-test', protect, teacherController.teacherCreateTest);//forTest
+router.get('/my-tests', protect, teacherController.getTeacherTests);
+

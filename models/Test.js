@@ -1,3 +1,4 @@
+// models/Test.js
 const mongoose = require('mongoose');
 
 const testSchema = new mongoose.Schema({
@@ -27,6 +28,11 @@ const testSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: false
+  },
+  status: {
+    type: String,
+    enum: ['pending', 'completed'],
+    default: 'pending'
   }
 }, { timestamps: true });
 

@@ -1,5 +1,8 @@
 const cron = require('node-cron');
 const { exec } = require('child_process');
+const Test = require('../models/Test');
+const schedule = require('node-schedule');
+const User = require('../models/User');
 
 /**
  * Initializes and starts all cron jobs for the application.
@@ -38,6 +41,22 @@ const startScheduledJobs = () => {
       timezone: 'Asia/Kolkata',
     }
   );
+
+  // ----- 2️⃣ Update test status (pending → completed) every minute -----
+  schedule.scheduleJob('* * * * *', async () => {
+    try {
+      const now = new Date();
+      const result = await Test.updateMany(
+        { testDate: { $lte: now }, status: 'pending' },
+        { $set: { status: 'completed' } }
+      );
+      if (result.modifiedCount > 0) {
+        console.log(`[Scheduler] Updated ${result.modifiedCount} test(s) to completed.`);
+      }
+    } catch (err) {
+      console.error('[Scheduler] Error updating test status:', err);
+    }
+  });
 
   // --- Add other jobs here in the future ---
   // cron.schedule('...', () => { ... });

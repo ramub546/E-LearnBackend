@@ -961,6 +961,115 @@ const getMyAttendanceSummary = async (req, res) => {
   }
 };
 
+/**
+ * @route   GET /api/student/upcoming-deadlines
+ * @desc    Get all tests and assignments due today, tomorrow, or the day after.
+ * @access  Private (Student)
+ */
+const getMyUpcomingDeadlines = async (req, res) => {
+  try {
+    // 1. Get student and their class/subject info
+    const student = await User.findById(req.user.id).select('_id class role');
+
+    if (!student || student.role !== 'student' || !student.class) {
+      return res.status(404).json({
+        success: false,
+        message: 'Student or student class not found',
+      });
+    }
+
+    const classData = await Class.findById(student.class).select('subjects');
+
+    if (!classData || !classData.subjects) {
+      return res.status(404).json({
+        success: false,
+        message: 'Class subjects not found for this student',
+      });
+    }
+    const subjectIds = classData.subjects;
+
+    // 2. Define the date ranges
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const tomorrowStart = new Date(todayStart);
+    tomorrowStart.setDate(todayStart.getDate() + 1);
+
+    const dayAfterTomorrowStart = new Date(todayStart);
+    dayAfterTomorrowStart.setDate(todayStart.getDate() + 2);
+
+    const dayAfterTomorrowEnd = new Date(dayAfterTomorrowStart);
+    dayAfterTomorrowEnd.setHours(23, 59, 59, 999);
+
+    // 3. Find all relevant items in parallel
+    const [tests, assignments] = await Promise.all([
+      // Find tests within the 3-day window
+      Test.find({
+        subject: { $in: subjectIds },
+        testDate: { $gte: todayStart, $lte: dayAfterTomorrowEnd },
+      })
+        .populate('subject', 'subjectName subjectCode')
+        .select('title subject testDate totalMarks')
+        .lean(), // Use .lean() for faster read-only ops
+
+      // Find assignments within the 3-day window
+      Assignment.find({
+        subject: { $in: subjectIds },
+        dueDate: { $gte: todayStart, $lte: dayAfterTomorrowEnd },
+      })
+        .populate('subject', 'subjectName subjectCode')
+        .select('title subject dueDate')
+        .lean(),
+    ]);
+
+    // 4. Combine and categorize the results
+
+    // Add a 'type' and common 'date' field for easy processing
+    const combinedDeadlines = [
+      ...tests.map((t) => ({ ...t, type: 'test', date: t.testDate })),
+      ...assignments.map((a) => ({
+        ...a,
+        type: 'assignment',
+        date: a.dueDate,
+      })),
+    ];
+
+    const upcoming = {
+      today: [],
+      tomorrow: [],
+      dayAfterTomorrow: [],
+    };
+
+    // Sort items into their respective day-buckets
+    for (const item of combinedDeadlines) {
+      const itemDate = new Date(item.date);
+
+      if (itemDate >= dayAfterTomorrowStart) {
+        upcoming.dayAfterTomorrow.push(item);
+      } else if (itemDate >= tomorrowStart) {
+        upcoming.tomorrow.push(item);
+      } else {
+        upcoming.today.push(item);
+      }
+    }
+
+    // 5. Send the successful response
+    return res.status(200).json({
+      success: true,
+      message: 'Upcoming deadlines fetched successfully',
+      data: upcoming,
+    });
+  } catch (error) {
+    // 6. Handle any server errors
+    console.error('Error fetching upcoming deadlines:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal Server Error',
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   getStudentNotes,
   downloadNote,
@@ -977,4 +1086,5 @@ module.exports = {
   getMyAvailableTests,
   getMyAttendance,
   getMyAttendanceSummary,
+  getMyUpcomingDeadlines,
 };

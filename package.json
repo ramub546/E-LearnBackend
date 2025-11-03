@@ -10,12 +10,17 @@
     "bcrypt": "^6.0.0",
     "bcryptjs": "^2.4.3",
     "body-parser": "^1.20.2",
+    "cors": "^2.8.5",
     "dotenv": "^16.0.0",
     "express": "^4.18.2",
     "jsonwebtoken": "^9.0.0",
     "mongoose": "^7.0.0",
     "multer": "^2.0.2",
     "node-cron": "^4.2.1",
+<<<<<<< HEAD
+=======
+    "node-schedule": "^2.1.1",
+>>>>>>> 778b5eb912bda72b531eb20949c52d07f5ebacae
     "nodemailer": "^6.9.0",
     "validator": "^13.9.0"
   },

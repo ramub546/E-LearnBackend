@@ -37,6 +37,8 @@ router.post(
   studentController.submitAssignment
 );
 
+router.get('/upcoming-deadlines', studentController.getMyUpcomingDeadlines); // for student calendar, fetches today, tomorrow and day after tomorrow assignments & tests
+
 // -------------RAMU--------------
 router.get('/assignments', getClassAssignments);
 router.get('/download-assignment/:id', downloadAssignment);

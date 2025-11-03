@@ -1302,7 +1302,7 @@ exports.getSubjectsByClass = async (req, res) => {
 };
 
 
-// Create a new test
+// Create a new test   forTest
 exports.teacherCreateTest = async (req, res) => {
   try {
     const { title, subject, class: classId, totalMarks, testDate } = req.body;

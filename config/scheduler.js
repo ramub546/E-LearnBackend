@@ -43,7 +43,7 @@ const startScheduledJobs = () => {
   );
 
   // ----- 2️⃣ Update test status (pending → completed) every minute -----
-  schedule.scheduleJob('* * * * *', async () => {
+  schedule.scheduleJob({rule: '* * * * *', tz: 'Asia/Kolkata'}, async () => {
     try {
       const now = new Date();
       const result = await Test.updateMany(

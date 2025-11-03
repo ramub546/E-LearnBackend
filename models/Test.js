@@ -1,4 +1,4 @@
-// models/Test.js
+// forTest
 const mongoose = require('mongoose');
 
 const testSchema = new mongoose.Schema({
@@ -22,6 +22,10 @@ const testSchema = new mongoose.Schema({
   },
   testDate: {
     type: Date,
+    required: true
+  },
+  link: {  
+    type: String,
     required: true
   },
   createdBy: {

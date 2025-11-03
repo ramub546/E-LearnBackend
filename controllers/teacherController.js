@@ -1303,13 +1303,17 @@ exports.getSubjectsByClass = async (req, res) => {
 
 
 // Create a new test   forTest
+// Create a new test forTest
 exports.teacherCreateTest = async (req, res) => {
   try {
-    const { title, subject, class: classId, totalMarks, testDate } = req.body;
+    const { title, subject, class: classId, totalMarks, testDate, link } = req.body;
 
-    // Validate required fields
-    if (!title || !subject || !classId || !totalMarks) {
-      return res.status(400).json({ success: false, message: 'Title, subject, class, and totalMarks are required.' });
+    // Validate required fields including link
+    if (!title || !subject || !classId || !totalMarks || !link) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Title, subject, class, totalMarks, and link are required.' 
+      });
     }
 
     let testDateObj;
@@ -1340,6 +1344,7 @@ exports.teacherCreateTest = async (req, res) => {
       class: classId,
       totalMarks,
       testDate: testDateObj,
+      link, // <-- save the link
       createdBy: req.user?._id || null, // handle jobs without a logged-in user
     });
 

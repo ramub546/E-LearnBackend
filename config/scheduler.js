@@ -10,7 +10,7 @@ const User = require('../models/User');
 const startScheduledJobs = () => {
   console.log('Scheduling daily "mark absent" job for Mon-Sat at 1:00AM...');
 
-  // '0 5 * * 1-6' = 5:00 AM, every day-of-month, every month, on day-of-week 1-6 (Mon-Sat)
+  // '0 1 * * 1-6' = 1:00 AM, every day-of-month, every month, on day-of-week 1-6 (Mon-Sat)
   cron.schedule(
     '0 1 * * 1-6',
     () => {
@@ -51,7 +51,9 @@ const startScheduledJobs = () => {
         { $set: { status: 'completed' } }
       );
       if (result.modifiedCount > 0) {
-        console.log(`[Scheduler] Updated ${result.modifiedCount} test(s) to completed.`);
+        console.log(
+          `[Scheduler] Updated ${result.modifiedCount} test(s) to completed.`
+        );
       }
     } catch (err) {
       console.error('[Scheduler] Error updating test status:', err);

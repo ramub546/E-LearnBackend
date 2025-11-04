@@ -296,7 +296,7 @@ const getMyProfile = async (req, res) => {
     const student = await User.findById(req.user.id)
       .populate({
         path: 'class',
-        select: 'classCode',
+        select: 'classCode className',
       })
       .select(
         // Exclude sensitive fields
@@ -891,7 +891,6 @@ const getMyAttendance = async (req, res) => {
  */
 const getMyAttendanceSummary = async (req, res) => {
   try {
-    // 1. Get the student's subjects (reusing logic from getMySubjects)
     const student = await User.findById(req.user.id).select('class role');
     if (!student || student.role !== 'student' || !student.class) {
       return res.status(404).json({

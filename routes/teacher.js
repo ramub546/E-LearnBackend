@@ -2,6 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
+const TeacherAnnouncement = require('../models/TeacherAnnouncement');
 const teacherController = require('../controllers/teacherController');
 const { uploadAssignmentMiddleware, uploadAssignment, getMyAssignments, downloadAssignment } = require('../controllers/teacherController');
 const {  getClassMarks, getStudentMarks,getMyUploadedMarks } = require('../controllers/teacherController');
@@ -80,3 +81,9 @@ router.get('/subjects/:teacherId', protect, teacherController.getSubjectsByClass
 router.post('/create-test', protect, teacherController.teacherCreateTest);//forTest
 router.get('/my-tests', protect, teacherController.getTeacherTests);
 
+
+// Add these routes for teacher announcements
+router.post('/create-announcement', protect, teacherController.createAnnouncement);
+router.get('/my-announcements', protect, teacherController.getMyAnnouncements);
+router.put('/update-announcement/:id', protect, teacherController.updateAnnouncement);
+router.delete('/delete-announcement/:id', protect, teacherController.deleteAnnouncement);

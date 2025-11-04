@@ -1069,6 +1069,52 @@ const getMyUpcomingDeadlines = async (req, res) => {
   }
 };
 
+// ---------------------- GET STUDENT ANNOUNCEMENTS ----------------------
+const getStudentAnnouncements = async (req, res) => {
+  try {
+    const studentId = req.user.id;
+    
+    // Get student's class
+    const student = await User.findById(studentId).populate('class');
+    if (!student || !student.class) {
+      return res.status(400).json({ message: 'Student class not found' });
+    }
+
+    // Get announcements for student's class and approved events
+    const announcements = await TeacherAnnouncement.find({
+      $or: [
+        // Student-specific announcements for their class
+        { 
+          announcementType: 'student', 
+          class: student.class._id,
+          status: 'approved'
+        },
+        // All approved events
+        { 
+          announcementType: 'event', 
+          status: 'approved'
+        }
+      ]
+    })
+    .populate('class', 'className')
+    .populate('subject', 'subjectName')
+    .populate('createdBy', 'fullName')
+    .sort({ createdAt: -1 });
+
+    return res.json({
+      studentClass: student.class.className,
+      total: announcements.length,
+      announcements: announcements
+    });
+
+  } catch (error) {
+    console.error('Get Student Announcements Error:', error);
+    return res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+
+const TeacherAnnouncement = require('../models/TeacherAnnouncement');
 module.exports = {
   getStudentNotes,
   downloadNote,
@@ -1086,4 +1132,7 @@ module.exports = {
   getMyAttendance,
   getMyAttendanceSummary,
   getMyUpcomingDeadlines,
+  getStudentAnnouncements,
 };
+
+

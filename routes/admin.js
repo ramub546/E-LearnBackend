@@ -24,3 +24,10 @@ router.get('/subjects/pending', protect, adminOnly, adminController.getPendingSc
 router.post('/subjects/approve', protect, adminOnly, adminController.approveScheduledSubject);
 
 module.exports = router;
+
+
+// Add these routes for admin announcement management
+router.get('/pending-announcements', protect, adminController.getPendingAnnouncements);
+router.put('/approve-announcement/:id', protect, adminController.approveAnnouncement);
+router.put('/reject-announcement/:id', protect, adminController.rejectAnnouncement);
+router.get('/all-announcements', protect, adminController.getAllAnnouncements);

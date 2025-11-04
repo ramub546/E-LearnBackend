@@ -50,4 +50,9 @@ router.get('/notes', studentController.getStudentNotes); // All notes grouped by
 router.get('/notes/:subjectName', studentController.getStudentNotesBySubject); // Notes by specific subject
 router.get('/notes/download/:id', studentController.downloadNote);
 
+
+
+router.get('/announcements', protect, studentController.getStudentAnnouncements);
+
+
 module.exports = router;

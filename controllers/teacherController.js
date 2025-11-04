@@ -1408,3 +1408,192 @@ exports.getTeacherTests = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
+
+const TeacherAnnouncement = require('../models/TeacherAnnouncement');
+// ---------------------- CREATE ANNOUNCEMENT ----------------------
+exports.createAnnouncement = async (req, res) => {
+  try {
+    const { 
+      title, 
+      description, 
+      announcementType, 
+      className, 
+      subjectName,
+      eventDate,
+      eventLocation 
+    } = req.body;
+
+    const teacherId = req.user.id;
+
+    // Validation
+    if (!title || !description || !announcementType) {
+      return res.status(400).json({ 
+        message: 'Title, description, and announcement type are required' 
+      });
+    }
+
+    if (announcementType === 'student' && (!className || !subjectName)) {
+      return res.status(400).json({ 
+        message: 'Class name and subject name are required for student announcements' 
+      });
+    }
+
+    let classData = null;
+    let subject = null;
+
+    // For student announcements, validate class and subject
+    if (announcementType === 'student') {
+      // Find class
+      const cleanClassName = className.toString().replace(/"/g, '').trim();
+      classData = await Class.findOne({ className: cleanClassName });
+      if (!classData) {
+        return res.status(400).json({ message: `Class "${cleanClassName}" not found` });
+      }
+
+      // Find subject
+      subject = await Subject.findOne({
+        subjectName: { $regex: new RegExp(`^${subjectName}$`, 'i') },
+        class: classData._id
+      });
+
+      if (!subject) {
+        return res.status(400).json({ 
+          message: `Subject "${subjectName}" not found for class ${cleanClassName}` 
+        });
+      }
+    }
+
+    // Create announcement
+    const announcement = new TeacherAnnouncement({
+      title,
+      description,
+      announcementType,
+      class: classData ? classData._id : undefined,
+      subject: subject ? subject._id : undefined,
+      createdBy: teacherId,
+      eventDate: eventDate ? new Date(eventDate) : undefined,
+      eventLocation: eventLocation || undefined,
+      // Events go to admin for approval, student announcements are auto-approved
+      status: announcementType === 'student' ? 'approved' : 'pending'
+    });
+
+    await announcement.save();
+
+    // Populate for response
+    await announcement.populate('class', 'className');
+    await announcement.populate('subject', 'subjectName');
+    await announcement.populate('createdBy', 'fullName');
+
+    return res.status(201).json({
+      message: announcementType === 'student' 
+        ? 'Announcement created successfully for students' 
+        : 'Event announcement submitted for admin approval',
+      announcement: {
+        id: announcement._id,
+        title: announcement.title,
+        announcementType: announcement.announcementType,
+        class: announcement.class ? announcement.class.className : null,
+        subject: announcement.subject ? announcement.subject.subjectName : null,
+        status: announcement.status,
+        createdAt: announcement.createdAt
+      }
+    });
+
+  } catch (error) {
+    console.error('Create Announcement Error:', error);
+    return res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// ---------------------- GET MY ANNOUNCEMENTS ----------------------
+exports.getMyAnnouncements = async (req, res) => {
+  try {
+    const teacherId = req.user.id;
+    
+    const announcements = await TeacherAnnouncement.find({ createdBy: teacherId })
+      .populate('class', 'className')
+      .populate('subject', 'subjectName')
+      .populate('createdBy', 'fullName')
+      .populate('approvedBy', 'fullName')
+      .sort({ createdAt: -1 });
+
+    return res.json({
+      total: announcements.length,
+      announcements: announcements
+    });
+
+  } catch (error) {
+    console.error('Get My Announcements Error:', error);
+    return res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// ---------------------- UPDATE ANNOUNCEMENT ----------------------
+exports.updateAnnouncement = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, description, eventDate, eventLocation } = req.body;
+    const teacherId = req.user.id;
+
+    const announcement = await TeacherAnnouncement.findOne({ 
+      _id: id, 
+      createdBy: teacherId,
+      status: { $in: ['pending', 'approved'] }
+    });
+
+    if (!announcement) {
+      return res.status(404).json({ message: 'Announcement not found or cannot be updated' });
+    }
+
+    // Update fields
+    if (title) announcement.title = title;
+    if (description) announcement.description = description;
+    if (eventDate) announcement.eventDate = new Date(eventDate);
+    if (eventLocation) announcement.eventLocation = eventLocation;
+
+    // If it was approved, send back to pending for admin review
+    if (announcement.status === 'approved' && announcement.announcementType === 'event') {
+      announcement.status = 'pending';
+    }
+
+    await announcement.save();
+    await announcement.populate('class', 'className');
+    await announcement.populate('subject', 'subjectName');
+
+    return res.json({
+      message: 'Announcement updated successfully',
+      announcement: announcement
+    });
+
+  } catch (error) {
+    console.error('Update Announcement Error:', error);
+    return res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// ---------------------- DELETE ANNOUNCEMENT ----------------------
+exports.deleteAnnouncement = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const teacherId = req.user.id;
+
+    const announcement = await TeacherAnnouncement.findOne({ 
+      _id: id, 
+      createdBy: teacherId 
+    });
+
+    if (!announcement) {
+      return res.status(404).json({ message: 'Announcement not found' });
+    }
+
+    await TeacherAnnouncement.findByIdAndDelete(id);
+
+    return res.json({
+      message: 'Announcement deleted successfully'
+    });
+
+  } catch (error) {
+    console.error('Delete Announcement Error:', error);
+    return res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};

@@ -421,3 +421,122 @@ exports.approveScheduledSubject = async (req, res) => {
     res.status(500).json({ message: 'Server error', error });
   }
 };
+
+// Admin announcement controller
+const TeacherAnnouncement = require('../models/TeacherAnnouncement');
+
+
+// ---------------------- GET PENDING ANNOUNCEMENTS ----------------------
+exports.getPendingAnnouncements = async (req, res) => {
+  try {
+    const announcements = await TeacherAnnouncement.find({ status: 'pending' })
+      .populate('class', 'className')
+      .populate('subject', 'subjectName')
+      .populate('createdBy', 'fullName email')
+      .sort({ createdAt: -1 });
+
+    return res.json({
+      total: announcements.length,
+      announcements: announcements
+    });
+
+  } catch (error) {
+    console.error('Get Pending Announcements Error:', error);
+    return res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// ---------------------- APPROVE ANNOUNCEMENT ----------------------
+exports.approveAnnouncement = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const adminId = req.user.id;
+
+    const announcement = await TeacherAnnouncement.findByIdAndUpdate(
+      id,
+      {
+        status: 'approved',
+        approvedBy: adminId,
+        approvedAt: new Date()
+      },
+      { new: true }
+    )
+    .populate('class', 'className')
+    .populate('subject', 'subjectName')
+    .populate('createdBy', 'fullName email');
+
+    if (!announcement) {
+      return res.status(404).json({ message: 'Announcement not found' });
+    }
+
+    return res.json({
+      message: 'Announcement approved successfully',
+      announcement: announcement
+    });
+
+  } catch (error) {
+    console.error('Approve Announcement Error:', error);
+    return res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// ---------------------- REJECT ANNOUNCEMENT ----------------------
+exports.rejectAnnouncement = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { rejectionReason } = req.body;
+    const adminId = req.user.id;
+
+    if (!rejectionReason) {
+      return res.status(400).json({ message: 'Rejection reason is required' });
+    }
+
+    const announcement = await TeacherAnnouncement.findByIdAndUpdate(
+      id,
+      {
+        status: 'rejected',
+        approvedBy: adminId,
+        approvedAt: new Date(),
+        rejectionReason: rejectionReason
+      },
+      { new: true }
+    )
+    .populate('class', 'className')
+    .populate('subject', 'subjectName')
+    .populate('createdBy', 'fullName email');
+
+    if (!announcement) {
+      return res.status(404).json({ message: 'Announcement not found' });
+    }
+
+    return res.json({
+      message: 'Announcement rejected successfully',
+      announcement: announcement
+    });
+
+  } catch (error) {
+    console.error('Reject Announcement Error:', error);
+    return res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// ---------------------- GET ALL ANNOUNCEMENTS ----------------------
+exports.getAllAnnouncements = async (req, res) => {
+  try {
+    const announcements = await TeacherAnnouncement.find()
+      .populate('class', 'className')
+      .populate('subject', 'subjectName')
+      .populate('createdBy', 'fullName email')
+      .populate('approvedBy', 'fullName')
+      .sort({ createdAt: -1 });
+
+    return res.json({
+      total: announcements.length,
+      announcements: announcements
+    });
+
+  } catch (error) {
+    console.error('Get All Announcements Error:', error);
+    return res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};

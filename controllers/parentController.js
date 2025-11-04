@@ -303,3 +303,74 @@ exports.getParentProfile = async (req, res) => {
       .json({ message: 'Server error', error: err.message });
   }
 };
+
+const TeacherAnnouncement = require('../models/TeacherAnnouncement');
+
+// ---------------------- GET PARENT ANNOUNCEMENTS ----------------------
+exports.getParentAnnouncements = async (req, res) => {
+  try {
+    const parentId = req.user.id;
+    
+    // Get parent's linked students
+    const parent = await User.findById(parentId);
+    if (!parent || !parent.linkedStudents || parent.linkedStudents.length === 0) {
+      return res.json({
+        linkedStudents: 0,
+        total: 0,
+        announcements: []
+      });
+    }
+
+    // Extract roll numbers from linked students
+    const studentRollNumbers = parent.linkedStudents.map(ls => ls.studentId);
+
+    // Find students by their roll numbers (roleNumber)
+    const students = await User.find({ 
+      roleNumber: { $in: studentRollNumbers },
+      role: 'student'
+    }).populate('class');
+
+    if (students.length === 0) {
+      return res.json({
+        linkedStudents: 0,
+        total: 0,
+        announcements: []
+      });
+    }
+
+    const studentClasses = students.map(s => s.class._id);
+
+    // Get announcements for students' classes and approved events
+    const announcements = await TeacherAnnouncement.find({
+      $or: [
+        // Student-specific announcements for their children's classes
+        { 
+          announcementType: 'student', 
+          class: { $in: studentClasses },
+          status: 'approved'
+        },
+        // All approved events
+        { 
+          announcementType: 'event', 
+          status: 'approved'
+        }
+      ]
+    })
+    .populate('class', 'className')
+    .populate('subject', 'subjectName')
+    .populate('createdBy', 'fullName')
+    .sort({ createdAt: -1 });
+
+    return res.json({
+      linkedStudents: students.length,
+      studentNames: students.map(s => s.fullName),
+      studentClasses: [...new Set(students.map(s => s.class.className))],
+      total: announcements.length,
+      announcements: announcements
+    });
+
+  } catch (error) {
+    console.error('Get Parent Announcements Error:', error);
+    return res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};

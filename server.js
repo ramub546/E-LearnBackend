@@ -8,7 +8,6 @@ const studentRoutes = require('./routes/student');
 const authRoutes = require('./routes/auth');
 const teacherRoutes = require('./routes/teacher');
 const parentRoutes = require('./routes/parent.js');
-const teacherRoutes = require('./routes/teacher');
 const cors = require('cors');
 
 

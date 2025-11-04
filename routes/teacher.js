@@ -47,6 +47,7 @@ router.put('/update-subjects', protect, teacherController.updateTeacherSubjects)
 router.post('/upload-note', protect, upload.single('file'), teacherController.uploadNote);
 router.get('/my-notes', protect, teacherController.getMyNotes);
 router.get('/download/:id', protect, teacherController.downloadNote);
+router.get('/note-count-by-class-subject', protect, teacherController.getNotesCountByClassAndSubject);//count of notes
 
 // ✅ TEACHER MEETING ROUTES
 router.post('/schedule-meeting', protect, teacherController.scheduleMeeting);
@@ -80,6 +81,7 @@ router.get('/subjects/:teacherId', protect, teacherController.getSubjectsByClass
 
 router.post('/create-test', protect, teacherController.teacherCreateTest);//forTest
 router.get('/my-tests', protect, teacherController.getTeacherTests);
+
 
 
 // Add these routes for teacher announcements

@@ -1597,3 +1597,138 @@ exports.deleteAnnouncement = async (req, res) => {
     return res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
+
+
+
+// Get all tests created by teacher
+exports.getTeacherTests = async (req, res) => {
+  try {
+    const teacher = await User.findById(req.user?._id);
+    const teacherRegion = teacher?.countryRegion || 'UTC';
+
+    const tests = await Test.find({ createdBy: req.user._id })
+      .populate('subject')
+      .populate('class');
+
+    // Convert testDate from UTC → teacher's local timezone
+    const testsWithLocalTime = tests.map(test => ({
+      ...test.toObject(),
+      testDateLocal: DateTime.fromJSDate(test.testDate)
+                             .setZone(teacherRegion)
+                             .toLocaleString(DateTime.DATETIME_MED)
+    }));
+
+    res.status(200).json({ success: true, tests: testsWithLocalTime });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+// -------------------- GET TOTAL NOTES FOR A SUBJECT BY TEACHER--------------------
+
+exports.getNotesCountByClassAndSubject = async (req, res) => {
+  try {
+    const teacherId = req.user._id;
+    const { className, subjectName } = req.query;
+
+    if (!className || !subjectName) {
+      return res.status(400).json({ message: 'Both class name and subject name are required.' });
+    }
+
+    const cleanClassName = className.toString().replace(/"/g, '').trim();
+
+    // Find class
+    const classData = await Class.findOne({ className: cleanClassName });
+    if (!classData) {
+      return res.status(404).json({ message: `Class "${cleanClassName}" not found.` });
+    }
+
+    // Find subject for that class
+    const subject = await Subject.findOne({
+      subjectName: { $regex: new RegExp(`^${subjectName}$`, 'i') },
+      class: classData._id
+    });
+
+    if (!subject) {
+      return res.status(404).json({ message: `Subject "${subjectName}" not found for class "${cleanClassName}".` });
+    }
+
+    // Count notes uploaded by teacher for this class and subject
+    const noteCount = await Note.countDocuments({
+      uploadedBy: teacherId,
+      class: classData._id,
+      subject: subject._id
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Note count for class and subject fetched successfully.',
+      teacherId,
+      className: cleanClassName,
+      subjectName,
+      noteCount
+    });
+
+  } catch (error) {
+    console.error('Error fetching note count:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while fetching note count.',
+      error: error.message
+    });
+  }
+};
+
+// -------------------- GET TOTAL TEST FOR A SUBJECT BY TEACHER --------------------
+
+exports.getTotalTestsByTeacherForSubject = async (req, res) => {
+  try {
+    const teacherId = req.user._id;
+    const { subjectName, className } = req.query;
+
+    if (!subjectName || !className) {
+      return res.status(400).json({ message: 'Subject name and class name are required.' });
+    }
+
+    const cleanClassName = className.toString().replace(/"/g, '').trim();
+
+    // Find class
+    const classData = await Class.findOne({ className: cleanClassName });
+    if (!classData) {
+      return res.status(404).json({ message: `Class "${cleanClassName}" not found.` });
+    }
+
+    // Find subject for that class
+    const subject = await Subject.findOne({
+      subjectName: { $regex: new RegExp(`^${subjectName}$`, 'i') },
+      class: classData._id
+    });
+
+    if (!subject) {
+      return res.status(404).json({ message: `Subject "${subjectName}" not found for class "${cleanClassName}".` });
+    }
+
+    // Count tests created by teacher for that subject and class
+    const totalTests = await Test.countDocuments({
+      createdBy: teacherId,
+      subject: subject._id,
+      class: classData._id
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: `Total tests for ${subjectName} in class ${cleanClassName} by teacher.`,
+      subjectName,
+      className: cleanClassName,
+      totalTests
+    });
+
+  } catch (error) {
+    console.error('Error fetching total tests:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while fetching total tests.',
+      error: error.message
+    });
+  }
+};

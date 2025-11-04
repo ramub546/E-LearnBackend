@@ -3,6 +3,9 @@ const jwt = require('jsonwebtoken');
 const validator = require('validator');
 
 const User = require('../models/User');
+const Subject = require('../models/Subject');
+const Assignment = require('../models/Assignment');
+const Submission = require('../models/AssignmentSubmission');
 const { sendOtpEmail } = require('../utils/mailer');
 const { generateOTP } = require('../utils/otp'); // ✅ ADD THIS IMPORT
 const OTP_TTL_MINUTES = parseInt(process.env.OTP_TTL_MINUTES || '15');
@@ -16,11 +19,18 @@ exports.registerParent = async (req, res) => {
       phone,
       linkedStudents,
       password,
-      confirmPassword
+      confirmPassword,
     } = req.body;
 
     // ✅ Required field check
-    if (!fullName || !email || !phone || !linkedStudents || !password || !confirmPassword) {
+    if (
+      !fullName ||
+      !email ||
+      !phone ||
+      !linkedStudents ||
+      !password ||
+      !confirmPassword
+    ) {
       return res.status(400).json({ message: 'Missing required fields' });
     }
 
@@ -31,7 +41,9 @@ exports.registerParent = async (req, res) => {
 
     // ✅ Phone validation
     if (!/^\+\d{1,3}\d{7,14}$/.test(phone)) {
-      return res.status(400).json({ message: 'Phone number must include country code (e.g., +91XXXXXXXXXX)' });
+      return res.status(400).json({
+        message: 'Phone number must include country code (e.g., +91XXXXXXXXXX)',
+      });
     }
 
     // ✅ Password validation
@@ -39,7 +51,9 @@ exports.registerParent = async (req, res) => {
       return res.status(400).json({ message: 'Passwords do not match' });
     }
     if (password.length < 6) {
-      return res.status(400).json({ message: 'Password must be at least 6 characters' });
+      return res
+        .status(400)
+        .json({ message: 'Password must be at least 6 characters' });
     }
 
     // ✅ Check if email already exists (ANY role)
@@ -55,26 +69,27 @@ exports.registerParent = async (req, res) => {
     }
 
     // ✅ Check if parent email matches any student email
-    const studentWithSameEmail = await User.findOne({ 
-      email: email.toLowerCase(), 
-      role: 'student' 
+    const studentWithSameEmail = await User.findOne({
+      email: email.toLowerCase(),
+      role: 'student',
     });
     if (studentWithSameEmail) {
-      return res.status(400).json({ 
-        message: 'Parent email cannot be same as student email. Please use a different email address.' 
+      return res.status(400).json({
+        message:
+          'Parent email cannot be same as student email. Please use a different email address.',
       });
     }
 
     // ✅ Also check if any linked student has the same email
     for (const studentInfo of studentValidation.studentsInfo) {
-      const student = await User.findOne({ 
+      const student = await User.findOne({
         roleNumber: studentInfo.studentId,
-        role: 'student' 
+        role: 'student',
       });
-      
+
       if (student && student.email.toLowerCase() === email.toLowerCase()) {
-        return res.status(400).json({ 
-          message: `Your email cannot be same as your child's (${studentInfo.studentName}) email. Please use a different email address.` 
+        return res.status(400).json({
+          message: `Your email cannot be same as your child's (${studentInfo.studentName}) email. Please use a different email address.`,
         });
       }
     }
@@ -83,8 +98,7 @@ exports.registerParent = async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(password, salt);
 
-   
- // ✅ Generate OTP
+    // ✅ Generate OTP
     const otpCode = generateOTP(6);
     const otpExpiresAt = new Date(Date.now() + OTP_TTL_MINUTES * 60 * 1000);
 
@@ -97,7 +111,7 @@ exports.registerParent = async (req, res) => {
       role: 'parent',
       linkedStudents,
       isEmailVerified: false,
-      otp: { code: otpCode, expiresAt: otpExpiresAt } // ✅ ADD OTP HERE
+      otp: { code: otpCode, expiresAt: otpExpiresAt }, // ✅ ADD OTP HERE
     });
 
     await parent.save();
@@ -105,25 +119,28 @@ exports.registerParent = async (req, res) => {
     // ✅ Send OTP email (CORRECT WAY)
     await sendOtpEmail(email, otpCode, OTP_TTL_MINUTES);
 
-    return res.status(201).json({ 
-      message: 'Parent registered successfully. OTP sent to email for verification.',
+    return res.status(201).json({
+      message:
+        'Parent registered successfully. OTP sent to email for verification.',
       email,
-      linkedStudents: studentValidation.studentsInfo
+      linkedStudents: studentValidation.studentsInfo,
     });
   } catch (err) {
     console.error('Parent Register Error:', err);
-    
+
     // ✅ Handle duplicate key error
     if (err.code === 11000) {
       if (err.keyPattern && err.keyPattern.roleNumber) {
-        return res.status(500).json({ 
-          message: 'Registration temporarily unavailable. Please try again.' 
+        return res.status(500).json({
+          message: 'Registration temporarily unavailable. Please try again.',
         });
       }
       return res.status(400).json({ message: 'Email already registered' });
     }
-    
-    return res.status(500).json({ message: 'Server error', error: err.message });
+
+    return res
+      .status(500)
+      .json({ message: 'Server error', error: err.message });
   }
 };
 
@@ -135,28 +152,34 @@ async function validateLinkedStudents(linkedStudents) {
     }
 
     const studentsInfo = [];
-    
+
     for (const link of linkedStudents) {
       const { studentId, relationship } = link;
-      
+
       if (!studentId || !relationship) {
-        return { isValid: false, error: 'Each linked student must have studentId and relationship' };
+        return {
+          isValid: false,
+          error: 'Each linked student must have studentId and relationship',
+        };
       }
 
       // Find student by roleNumber
-      const student = await User.findOne({ 
-        roleNumber: studentId.toUpperCase(), 
-        role: 'student' 
+      const student = await User.findOne({
+        roleNumber: studentId.toUpperCase(),
+        role: 'student',
       });
-      
+
       if (!student) {
-        return { isValid: false, error: `Student with ID ${studentId} not found` };
+        return {
+          isValid: false,
+          error: `Student with ID ${studentId} not found`,
+        };
       }
 
       studentsInfo.push({
         studentId: student.roleNumber,
         studentName: student.fullName,
-        relationship
+        relationship,
       });
     }
 
@@ -170,101 +193,113 @@ async function validateLinkedStudents(linkedStudents) {
 exports.loginParent = async (req, res) => {
   try {
     const { studentId, password } = req.body;
-    
+
     if (!studentId || !password) {
-      return res.status(400).json({ message: 'Student ID and password required' });
+      return res
+        .status(400)
+        .json({ message: 'Student ID and password required' });
     }
 
     // ✅ Find parent by linked student ID
-    const parent = await User.findOne({ 
+    const parent = await User.findOne({
       'linkedStudents.studentId': studentId.toUpperCase(),
-      role: 'parent'
+      role: 'parent',
     });
-    
+
     if (!parent) {
       return res.status(404).json({ message: 'Invalid credentials' });
     }
 
     if (!parent.isEmailVerified) {
-      return res.status(403).json({ message: 'Email not verified. Please verify first.' });
+      return res
+        .status(403)
+        .json({ message: 'Email not verified. Please verify first.' });
     }
 
     const isMatch = await bcrypt.compare(password, parent.passwordHash);
-    if (!isMatch) return res.status(401).json({ message: 'Invalid credentials' });
+    if (!isMatch)
+      return res.status(401).json({ message: 'Invalid credentials' });
 
     // ✅ Get linked student details
-    const linkedStudentDetails = await getLinkedStudentDetails(parent.linkedStudents);
+    const linkedStudentDetails = await getLinkedStudentDetails(
+      parent.linkedStudents
+    );
 
-    const payload = { 
-      id: parent._id, 
-      role: parent.role, 
+    const payload = {
+      id: parent._id,
+      role: parent.role,
       email: parent.email,
-      linkedStudents: parent.linkedStudents
+      linkedStudents: parent.linkedStudents,
     };
-    
-    const token = jwt.sign(payload, process.env.JWT_SECRET, { 
-      expiresIn: process.env.JWT_EXPIRES_IN || '7d' 
+
+    const token = jwt.sign(payload, process.env.JWT_SECRET, {
+      expiresIn: process.env.JWT_EXPIRES_IN || '7d',
     });
 
     return res.json({
       token,
-      user: { 
-        id: parent._id, 
-        fullName: parent.fullName, 
-        email: parent.email, 
+      user: {
+        id: parent._id,
+        fullName: parent.fullName,
+        email: parent.email,
         role: parent.role,
-        linkedStudents: linkedStudentDetails
-      }
+        linkedStudents: linkedStudentDetails,
+      },
     });
   } catch (err) {
     console.error('Parent Login Error:', err);
-    return res.status(500).json({ message: 'Server error', error: err.message });
+    return res
+      .status(500)
+      .json({ message: 'Server error', error: err.message });
   }
 };
 
 // ---------------------- GET LINKED STUDENT DETAILS ----------------------
 async function getLinkedStudentDetails(linkedStudents) {
   const studentDetails = [];
-  
+
   for (const link of linkedStudents) {
-    const student = await User.findOne({ 
+    const student = await User.findOne({
       roleNumber: link.studentId,
-      role: 'student' 
+      role: 'student',
     }).select('fullName class academicRegion roleNumber');
-    
+
     if (student) {
       studentDetails.push({
         studentId: student.roleNumber,
         studentName: student.fullName,
         class: student.class,
         region: student.academicRegion,
-        relationship: link.relationship
+        relationship: link.relationship,
       });
     }
   }
-  
+
   return studentDetails;
 }
 
 // ---------------------- PARENT PROFILE ----------------------
 exports.getParentProfile = async (req, res) => {
   try {
-    const parent = await User.findById(req.user.id)
-      .select('-passwordHash');
-    
+    const parent = await User.findById(req.user.id).select('-passwordHash');
+
     if (!parent) return res.status(404).json({ message: 'Parent not found' });
 
     // ✅ Get detailed student information
-    const linkedStudentDetails = await getLinkedStudentDetails(parent.linkedStudents);
+    const linkedStudentDetails = await getLinkedStudentDetails(
+      parent.linkedStudents
+    );
 
     const parentProfile = {
       ...parent.toObject(),
-      linkedStudents: linkedStudentDetails
+      linkedStudents: linkedStudentDetails,
     };
 
     return res.json(parentProfile);
   } catch (err) {
     console.error('Parent Profile Error:', err);
-    return res.status(500).json({ message: 'Server error', error: err.message });
+    return res
+      .status(500)
+      .json({ message: 'Server error', error: err.message });
   }
 };

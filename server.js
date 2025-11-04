@@ -7,6 +7,7 @@ const connectDB = require('./config/db');
 const studentRoutes = require('./routes/student');
 const authRoutes = require('./routes/auth');
 const teacherRoutes = require('./routes/teacher');
+const parentRoutes = require('./routes/parent.js');
 
 const { startScheduledJobs } = require('./config/scheduler.js');
 
@@ -23,6 +24,7 @@ app.use('/api/auth', authRoutes);
 const adminRoutes = require('./routes/admin');
 app.use('/api/admin', adminRoutes);
 app.use('/api/student', studentRoutes);
+app.use('/api/parent', parentRoutes);
 
 // ✅ TEMPORARY FIX: Drop and recreate the index
 const fixRoleNumberIndex = async () => {

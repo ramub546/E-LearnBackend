@@ -1276,11 +1276,12 @@ exports.addScheduledSubject = async (req, res) => {
 // ------------------- SUBJECT LIST FOR SELECTED CLASS (Approved Only) -------------------
 exports.getSubjectsByClass = async (req, res) => {
   try {
-    const { classId } = req.params;
+    const { teacherId } = req.params;
 
     // Fetch only approved scheduled subjects for this class
-    const approvedSubjects = await ScheduledSubject.find({ class: classId, status: 'approved' })
-      .populate('subject', 'subjectName')   // Get subject name
+    const approvedSubjects = await ScheduledSubject.find({ teacher: teacherId, status: 'approved' })
+      .populate('subject', 'subjectName')
+      .populate('class', 'className')   // Get subject name
       .populate('teacher', 'fullName email'); // Optional: include teacher info
 
     if (!approvedSubjects || approvedSubjects.length === 0) {
@@ -1293,6 +1294,7 @@ exports.getSubjectsByClass = async (req, res) => {
       subjectName: item.subject.subjectName,
       teacherName: item.teacher.fullName,
       teacherEmail: item.teacher.email,
+      className: item.class.className
     }));
 
     res.status(200).json({ subjects: subjectsForFrontend });
@@ -1302,6 +1304,7 @@ exports.getSubjectsByClass = async (req, res) => {
   }
 };
 
+// new test
 const countryToTimezone = {
   India: 'Asia/Kolkata',
   USA: 'America/New_York',

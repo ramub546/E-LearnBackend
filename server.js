@@ -8,10 +8,12 @@ const studentRoutes = require('./routes/student');
 const authRoutes = require('./routes/auth');
 const teacherRoutes = require('./routes/teacher');
 
+
+
 const { startScheduledJobs } = require('./config/scheduler.js');
 
-// Initialize app first
-const app = express();
+// CORS setup
+
 
 // Middleware
 app.use(bodyParser.json()); // or app.use(express.json());

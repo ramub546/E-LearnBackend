@@ -73,7 +73,7 @@ module.exports = router;
 // Add Subject feature Neww
 router.post('/add-subject', protect, teacherController.addScheduledSubject);
 // Optional: Get subjects list for selected class
-router.get('/subjects/:classId', protect, teacherController.getSubjectsByClass);
+router.get('/subjects/:teacherId', protect, teacherController.getSubjectsByClass);
 
 
 

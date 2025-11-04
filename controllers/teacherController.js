@@ -13,6 +13,7 @@ const Test = require('../models/Test'); // For clarity
 const ScheduledSubject = require('../models/scheduledSubject'); //Neww
 const schedule = require('node-schedule');//forTest
 const Announcement = require('../models/Announcement');
+const { DateTime } = require('luxon');
 
 // ... other imports
 
@@ -1301,9 +1302,14 @@ exports.getSubjectsByClass = async (req, res) => {
   }
 };
 
+const countryToTimezone = {
+  India: 'Asia/Kolkata',
+  USA: 'America/New_York',
+  UK: 'Europe/London',
+  // add more countries as needed
+};
 
-// Create a new test   forTest
-// Create a new test forTest
+// Create a new test for teacher
 exports.teacherCreateTest = async (req, res) => {
   try {
     const { title, subject, class: classId, totalMarks, testDate, link } = req.body;
@@ -1316,36 +1322,57 @@ exports.teacherCreateTest = async (req, res) => {
       });
     }
 
-    let testDateObj;
+    // 1️⃣ Get teacher's timezone
+    const teacher = await User.findById(req.user?._id);
+    const teacherRegion = countryToTimezone[teacher?.countryRegion] || 'UTC';
+
+    // 2️⃣ Parse and convert testDate to UTC
+    let testDateUTC;
 
     if (testDate) {
-      // If testDate is provided, handle both ISO 8601 and "dd-mm-yyyy HH:mm"
+      let localDateTime;
+
       if (testDate.includes('T')) {
-        // ISO format
-        testDateObj = new Date(testDate);
+        // ISO format from frontend calendar
+        localDateTime = DateTime.fromISO(testDate, { zone: teacherRegion });
       } else {
-        // dd-mm-yyyy HH:mm format
+        // "dd-mm-yyyy HH:mm" format
         const [datePart, timePart] = testDate.split(' ');
         if (!datePart || !timePart) {
           return res.status(400).json({ success: false, message: 'Invalid testDate format.' });
         }
         const [day, month, year] = datePart.split('-');
         const [hours, minutes] = timePart.split(':');
-        testDateObj = new Date(year, month - 1, day, hours, minutes);
+
+        localDateTime = DateTime.fromObject({
+          day: parseInt(day, 10),
+          month: parseInt(month, 10),
+          year: parseInt(year, 10),
+          hour: parseInt(hours, 10),
+          minute: parseInt(minutes, 10)
+        }, { zone: teacherRegion });
       }
+
+      if (!localDateTime.isValid) {
+        return res.status(400).json({ success: false, message: 'Could not parse testDate. Check format and timezone.' });
+      }
+
+      testDateUTC = localDateTime.toUTC().toJSDate();
     } else {
-      // If testDate is missing (like from scheduled job), default to current date/time
-      testDateObj = new Date();
+      // Default to current UTC time if missing
+      testDateUTC = new Date();
     }
 
+    // 3️⃣ Save the test
     const newTest = await Test.create({
       title,
       subject,
       class: classId,
       totalMarks,
-      testDate: testDateObj,
-      link, // <-- save the link
-      createdBy: req.user?._id || null, // handle jobs without a logged-in user
+      testDate: testDateUTC,
+      link,
+      createdBy: req.user?._id || null,
+      status: 'pending'
     });
 
     res.status(201).json({ success: true, test: newTest });
@@ -1354,15 +1381,25 @@ exports.teacherCreateTest = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
-
 // Get all tests created by teacher
 exports.getTeacherTests = async (req, res) => {
   try {
+    const teacher = await User.findById(req.user?._id);
+    const teacherRegion = teacher?.countryRegion || 'UTC';
+
     const tests = await Test.find({ createdBy: req.user._id })
       .populate('subject')
       .populate('class');
 
-    res.status(200).json({ success: true, tests });
+    // Convert testDate from UTC → teacher's local timezone
+    const testsWithLocalTime = tests.map(test => ({
+      ...test.toObject(),
+      testDateLocal: DateTime.fromJSDate(test.testDate)
+                             .setZone(teacherRegion)
+                             .toLocaleString(DateTime.DATETIME_MED)
+    }));
+
+    res.status(200).json({ success: true, tests: testsWithLocalTime });
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, message: err.message });

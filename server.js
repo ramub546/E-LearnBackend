@@ -10,7 +10,6 @@ const teacherRoutes = require('./routes/teacher');
 const parentRoutes = require('./routes/parent.js');
 const cors = require('cors');
 
-
 const { startScheduledJobs } = require('./config/scheduler.js');
 
 // CORS setup
@@ -21,7 +20,6 @@ app.use(
     credentials: true,
   })
 );
-
 
 // Middleware
 app.use(bodyParser.json()); // or app.use(express.json());

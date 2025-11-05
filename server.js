@@ -8,11 +8,18 @@ const studentRoutes = require('./routes/student');
 const authRoutes = require('./routes/auth');
 const teacherRoutes = require('./routes/teacher');
 const parentRoutes = require('./routes/parent.js');
+const cors = require('cors');
 
 const { startScheduledJobs } = require('./config/scheduler.js');
 
-// Initialize app first
+// CORS setup
 const app = express();
+app.use(
+  cors({
+    origin: 'http://localhost:3000', // frontend port
+    credentials: true,
+  })
+);
 
 // Middleware
 app.use(bodyParser.json()); // or app.use(express.json());

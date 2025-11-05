@@ -2,22 +2,32 @@ const User = require('../models/User');
 const { sendCustomEmail } = require('../utils/mailer');
 const ScheduledSubject = require('../models/scheduledSubject');
 
+const TestResult = require('../models/TestResult');
+const Test = require('../models/Test'); // Assuming Test.js is in models
+const Subject = require('../models/Subject');
+const Class = require('../models/Class');
+const Attendance = require('../models/Attendance'); // Make sure path is correct
+// const User = require('../models/User');
+const mongoose = require('mongoose'); // Need this for ID validation
+
 // ---------------------- GET PENDING TEACHERS ----------------------
 exports.getPendingTeachers = async (req, res) => {
   try {
-    const pendingTeachers = await User.find({ 
-      role: 'teacher', 
-      teacherStatus: 'pending' 
+    const pendingTeachers = await User.find({
+      role: 'teacher',
+      teacherStatus: 'pending',
     }).select('-passwordHash -otp');
 
     return res.json({
       message: 'Pending teachers retrieved successfully',
       count: pendingTeachers.length,
-      teachers: pendingTeachers
+      teachers: pendingTeachers,
     });
   } catch (err) {
     console.error('Get Pending Teachers Error:', err);
-    return res.status(500).json({ message: 'Server error', error: err.message });
+    return res
+      .status(500)
+      .json({ message: 'Server error', error: err.message });
   }
 };
 
@@ -25,7 +35,7 @@ exports.getPendingTeachers = async (req, res) => {
 exports.getAllTeachers = async (req, res) => {
   try {
     const { status } = req.query; // pending, approved, rejected
-    
+
     const filter = { role: 'teacher' };
     if (status) filter.teacherStatus = status;
 
@@ -36,11 +46,13 @@ exports.getAllTeachers = async (req, res) => {
     return res.json({
       message: 'Teachers retrieved successfully',
       count: teachers.length,
-      teachers: teachers
+      teachers: teachers,
     });
   } catch (err) {
     console.error('Get All Teachers Error:', err);
-    return res.status(500).json({ message: 'Server error', error: err.message });
+    return res
+      .status(500)
+      .json({ message: 'Server error', error: err.message });
   }
 };
 
@@ -49,9 +61,9 @@ exports.getTeacherByEmail = async (req, res) => {
   try {
     const { teacherEmail } = req.params;
 
-    const teacher = await User.findOne({ 
-      email: teacherEmail, 
-      role: 'teacher' 
+    const teacher = await User.findOne({
+      email: teacherEmail,
+      role: 'teacher',
     }).select('-passwordHash -otp');
 
     if (!teacher) {
@@ -60,11 +72,13 @@ exports.getTeacherByEmail = async (req, res) => {
 
     return res.json({
       message: 'Teacher retrieved successfully',
-      teacher: teacher
+      teacher: teacher,
     });
   } catch (err) {
     console.error('Get Teacher By Email Error:', err);
-    return res.status(500).json({ message: 'Server error', error: err.message });
+    return res
+      .status(500)
+      .json({ message: 'Server error', error: err.message });
   }
 };
 
@@ -74,14 +88,16 @@ exports.approveTeacherByEmail = async (req, res) => {
     const { teacherEmail } = req.params;
     const adminId = req.user.id;
 
-    const teacher = await User.findOne({ 
-      email: teacherEmail, 
+    const teacher = await User.findOne({
+      email: teacherEmail,
       role: 'teacher',
-      teacherStatus: 'pending' 
+      teacherStatus: 'pending',
     });
 
     if (!teacher) {
-      return res.status(404).json({ message: 'Pending teacher not found with this email' });
+      return res
+        .status(404)
+        .json({ message: 'Pending teacher not found with this email' });
     }
 
     // ✅ Update teacher status
@@ -107,21 +123,27 @@ exports.approveTeacherByEmail = async (req, res) => {
       <p>Best regards,<br>Administration Team</p>
     `;
 
-    await sendCustomEmail(teacher.email, 'Teacher Account Approved - Welcome!', approvalEmail);
+    await sendCustomEmail(
+      teacher.email,
+      'Teacher Account Approved - Welcome!',
+      approvalEmail
+    );
 
-    return res.json({ 
+    return res.json({
       message: 'Teacher approved successfully',
       teacher: {
         id: teacher._id,
         fullName: teacher.fullName,
         email: teacher.email,
         subjectSpecialization: teacher.subjectSpecialization,
-        status: teacher.teacherStatus
-      }
+        status: teacher.teacherStatus,
+      },
     });
   } catch (err) {
     console.error('Approve Teacher Error:', err);
-    return res.status(500).json({ message: 'Server error', error: err.message });
+    return res
+      .status(500)
+      .json({ message: 'Server error', error: err.message });
   }
 };
 
@@ -135,14 +157,16 @@ exports.rejectTeacherByEmail = async (req, res) => {
       return res.status(400).json({ message: 'Rejection reason is required' });
     }
 
-    const teacher = await User.findOne({ 
-      email: teacherEmail, 
+    const teacher = await User.findOne({
+      email: teacherEmail,
       role: 'teacher',
-      teacherStatus: 'pending' 
+      teacherStatus: 'pending',
     });
 
     if (!teacher) {
-      return res.status(404).json({ message: 'Pending teacher not found with this email' });
+      return res
+        .status(404)
+        .json({ message: 'Pending teacher not found with this email' });
     }
 
     // ✅ Update teacher status
@@ -163,21 +187,27 @@ exports.rejectTeacherByEmail = async (req, res) => {
       <p>Best regards,<br>Administration Team</p>
     `;
 
-    await sendCustomEmail(teacher.email, 'Teacher Registration Status Update', rejectionEmail);
+    await sendCustomEmail(
+      teacher.email,
+      'Teacher Registration Status Update',
+      rejectionEmail
+    );
 
-    return res.json({ 
-      message: 'Teacher rejected successfully'
+    return res.json({
+      message: 'Teacher rejected successfully',
     });
   } catch (err) {
     console.error('Reject Teacher Error:', err);
-    return res.status(500).json({ message: 'Server error', error: err.message });
+    return res
+      .status(500)
+      .json({ message: 'Server error', error: err.message });
   }
 };
 // ---------------------- GET ALL STUDENTS ----------------------
 exports.getAllStudents = async (req, res) => {
   try {
     const { class: className, region } = req.query;
-    
+
     const filter = { role: 'student' };
     if (className) filter.class = className;
     if (region) filter.academicRegion = new RegExp(region, 'i');
@@ -189,11 +219,13 @@ exports.getAllStudents = async (req, res) => {
     return res.json({
       message: 'Students retrieved successfully',
       count: students.length,
-      students: students
+      students: students,
     });
   } catch (err) {
     console.error('Get All Students Error:', err);
-    return res.status(500).json({ message: 'Server error', error: err.message });
+    return res
+      .status(500)
+      .json({ message: 'Server error', error: err.message });
   }
 };
 
@@ -207,10 +239,12 @@ exports.getAllParents = async (req, res) => {
     // Get student details for each parent
     const parentsWithStudentDetails = await Promise.all(
       parents.map(async (parent) => {
-        const studentDetails = await getLinkedStudentDetails(parent.linkedStudents);
+        const studentDetails = await getLinkedStudentDetails(
+          parent.linkedStudents
+        );
         return {
           ...parent.toObject(),
-          linkedStudents: studentDetails
+          linkedStudents: studentDetails,
         };
       })
     );
@@ -218,11 +252,13 @@ exports.getAllParents = async (req, res) => {
     return res.json({
       message: 'Parents retrieved successfully',
       count: parents.length,
-      parents: parentsWithStudentDetails
+      parents: parentsWithStudentDetails,
     });
   } catch (err) {
     console.error('Get All Parents Error:', err);
-    return res.status(500).json({ message: 'Server error', error: err.message });
+    return res
+      .status(500)
+      .json({ message: 'Server error', error: err.message });
   }
 };
 
@@ -235,16 +271,18 @@ exports.getParentsWithStudents = async (req, res) => {
 
     const parentsWithFullDetails = await Promise.all(
       parents.map(async (parent) => {
-        const studentDetails = await getLinkedStudentDetails(parent.linkedStudents);
-        
+        const studentDetails = await getLinkedStudentDetails(
+          parent.linkedStudents
+        );
+
         return {
           parent: {
             id: parent._id,
             fullName: parent.fullName,
             email: parent.email,
-            phone: parent.phone
+            phone: parent.phone,
           },
-          linkedStudents: studentDetails
+          linkedStudents: studentDetails,
         };
       })
     );
@@ -252,11 +290,13 @@ exports.getParentsWithStudents = async (req, res) => {
     return res.json({
       message: 'Parents with student details retrieved successfully',
       count: parents.length,
-      data: parentsWithFullDetails
+      data: parentsWithFullDetails,
     });
   } catch (err) {
     console.error('Get Parents With Students Error:', err);
-    return res.status(500).json({ message: 'Server error', error: err.message });
+    return res
+      .status(500)
+      .json({ message: 'Server error', error: err.message });
   }
 };
 
@@ -267,13 +307,13 @@ async function getLinkedStudentDetails(linkedStudents) {
   }
 
   const studentDetails = [];
-  
+
   for (const link of linkedStudents) {
-    const student = await User.findOne({ 
+    const student = await User.findOne({
       roleNumber: link.studentId,
-      role: 'student' 
+      role: 'student',
     }).select('fullName class academicRegion roleNumber email');
-    
+
     if (student) {
       studentDetails.push({
         studentId: student.roleNumber,
@@ -281,7 +321,7 @@ async function getLinkedStudentDetails(linkedStudents) {
         studentEmail: student.email,
         class: student.class,
         region: student.academicRegion,
-        relationship: link.relationship
+        relationship: link.relationship,
       });
     } else {
       studentDetails.push({
@@ -290,20 +330,18 @@ async function getLinkedStudentDetails(linkedStudents) {
         studentEmail: 'Unknown',
         class: 'Unknown',
         region: 'Unknown',
-        relationship: link.relationship
+        relationship: link.relationship,
       });
     }
   }
-  
+
   return studentDetails;
 }
-
 
 // controllers/adminController.js           Namrata
 const Note = require('../models/Note');
 
-
-// ---------------------- GET PENDING NOTES ---------------------- 
+// ---------------------- GET PENDING NOTES ----------------------
 exports.getPendingNotes = async (req, res) => {
   try {
     const notes = await Note.find({ status: 'pending' })
@@ -312,7 +350,9 @@ exports.getPendingNotes = async (req, res) => {
     return res.json(notes);
   } catch (error) {
     console.error('Get Pending Notes Error:', error);
-    return res.status(500).json({ message: 'Server error', error: error.message });
+    return res
+      .status(500)
+      .json({ message: 'Server error', error: error.message });
   }
 };
 
@@ -322,7 +362,10 @@ exports.approveNote = async (req, res) => {
     const noteId = req.params.id;
     const adminId = req.user?.id; // from protect middleware if admin is logged in
 
-    const note = await Note.findById(noteId).populate('uploadedBy', 'email fullName');
+    const note = await Note.findById(noteId).populate(
+      'uploadedBy',
+      'email fullName'
+    );
     if (!note) return res.status(404).json({ message: 'Note not found' });
 
     note.status = 'approved';
@@ -347,7 +390,9 @@ exports.approveNote = async (req, res) => {
     return res.json({ message: 'Note approved successfully' });
   } catch (error) {
     console.error('Approve Note Error:', error);
-    return res.status(500).json({ message: 'Server error', error: error.message });
+    return res
+      .status(500)
+      .json({ message: 'Server error', error: error.message });
   }
 };
 
@@ -357,7 +402,10 @@ exports.rejectNote = async (req, res) => {
     const noteId = req.params.id;
     const { reason } = req.body;
 
-    const note = await Note.findById(noteId).populate('uploadedBy', 'email fullName');
+    const note = await Note.findById(noteId).populate(
+      'uploadedBy',
+      'email fullName'
+    );
     if (!note) return res.status(404).json({ message: 'Note not found' });
 
     note.status = 'rejected';
@@ -382,7 +430,9 @@ exports.rejectNote = async (req, res) => {
     return res.json({ message: 'Note rejected successfully' });
   } catch (error) {
     console.error('Reject Note Error:', error);
-    return res.status(500).json({ message: 'Server error', error: error.message });
+    return res
+      .status(500)
+      .json({ message: 'Server error', error: error.message });
   }
 };
 
@@ -391,9 +441,9 @@ exports.rejectNote = async (req, res) => {
 exports.getPendingScheduledSubjects = async (req, res) => {
   try {
     const pendingSubjects = await ScheduledSubject.find({ status: 'pending' })
-      .populate('teacher', 'fullName email')   // teacher details
-      .populate('class', 'className')          // class details
-      .populate('subject', 'subjectName');     // subject details
+      .populate('teacher', 'fullName email') // teacher details
+      .populate('class', 'className') // class details
+      .populate('subject', 'subjectName'); // subject details
 
     res.status(200).json({ pendingSubjects });
   } catch (error) {
@@ -408,7 +458,8 @@ exports.approveScheduledSubject = async (req, res) => {
     const { scheduledId } = req.body;
 
     const scheduled = await ScheduledSubject.findById(scheduledId);
-    if (!scheduled) return res.status(404).json({ message: 'Scheduled request not found' });
+    if (!scheduled)
+      return res.status(404).json({ message: 'Scheduled request not found' });
 
     scheduled.status = 'approved';
     scheduled.approvedAt = new Date();
@@ -419,5 +470,453 @@ exports.approveScheduledSubject = async (req, res) => {
   } catch (error) {
     console.error('Error approving subject:', error);
     res.status(500).json({ message: 'Server error', error });
+  }
+};
+
+// Admin announcement controller
+const TeacherAnnouncement = require('../models/TeacherAnnouncement');
+
+// ---------------------- GET PENDING ANNOUNCEMENTS ----------------------
+exports.getPendingAnnouncements = async (req, res) => {
+  try {
+    const announcements = await TeacherAnnouncement.find({ status: 'pending' })
+      .populate('class', 'className')
+      .populate('subject', 'subjectName')
+      .populate('createdBy', 'fullName email')
+      .sort({ createdAt: -1 });
+
+    return res.json({
+      total: announcements.length,
+      announcements: announcements,
+    });
+  } catch (error) {
+    console.error('Get Pending Announcements Error:', error);
+    return res
+      .status(500)
+      .json({ message: 'Server error', error: error.message });
+  }
+};
+
+// ---------------------- APPROVE ANNOUNCEMENT ----------------------
+exports.approveAnnouncement = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const adminId = req.user.id;
+
+    const announcement = await TeacherAnnouncement.findByIdAndUpdate(
+      id,
+      {
+        status: 'approved',
+        approvedBy: adminId,
+        approvedAt: new Date(),
+      },
+      { new: true }
+    )
+      .populate('class', 'className')
+      .populate('subject', 'subjectName')
+      .populate('createdBy', 'fullName email');
+
+    if (!announcement) {
+      return res.status(404).json({ message: 'Announcement not found' });
+    }
+
+    return res.json({
+      message: 'Announcement approved successfully',
+      announcement: announcement,
+    });
+  } catch (error) {
+    console.error('Approve Announcement Error:', error);
+    return res
+      .status(500)
+      .json({ message: 'Server error', error: error.message });
+  }
+};
+
+// ---------------------- REJECT ANNOUNCEMENT ----------------------
+exports.rejectAnnouncement = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { rejectionReason } = req.body;
+    const adminId = req.user.id;
+
+    if (!rejectionReason) {
+      return res.status(400).json({ message: 'Rejection reason is required' });
+    }
+
+    const announcement = await TeacherAnnouncement.findByIdAndUpdate(
+      id,
+      {
+        status: 'rejected',
+        approvedBy: adminId,
+        approvedAt: new Date(),
+        rejectionReason: rejectionReason,
+      },
+      { new: true }
+    )
+      .populate('class', 'className')
+      .populate('subject', 'subjectName')
+      .populate('createdBy', 'fullName email');
+
+    if (!announcement) {
+      return res.status(404).json({ message: 'Announcement not found' });
+    }
+
+    return res.json({
+      message: 'Announcement rejected successfully',
+      announcement: announcement,
+    });
+  } catch (error) {
+    console.error('Reject Announcement Error:', error);
+    return res
+      .status(500)
+      .json({ message: 'Server error', error: error.message });
+  }
+};
+
+// ---------------------- GET ALL ANNOUNCEMENTS ----------------------
+exports.getAllAnnouncements = async (req, res) => {
+  try {
+    const announcements = await TeacherAnnouncement.find()
+      .populate('class', 'className')
+      .populate('subject', 'subjectName')
+      .populate('createdBy', 'fullName email')
+      .populate('approvedBy', 'fullName')
+      .sort({ createdAt: -1 });
+
+    return res.json({
+      total: announcements.length,
+      announcements: announcements,
+    });
+  } catch (error) {
+    console.error('Get All Announcements Error:', error);
+    return res
+      .status(500)
+      .json({ message: 'Server error', error: error.message });
+  }
+};
+
+// ------------SHUBHAM----------------
+// ---------------------- GET SUBJECT RESULTS SUMMARY ----------------------
+exports.getSubjectResultsSummary = async (req, res) => {
+  try {
+    const summary = await TestResult.aggregate([
+      // 1. Get Test details (subject/class) for each result
+      {
+        $lookup: {
+          from: 'tests', // Collection name for 'Test' model
+          localField: 'testID',
+          foreignField: '_id',
+          as: 'testDetails',
+        },
+      },
+      {
+        $unwind: '$testDetails',
+      },
+
+      // 2. Group by class and subject to get average marks
+      {
+        $group: {
+          _id: {
+            class: '$testDetails.class',
+            subject: '$testDetails.subject',
+          },
+          avgScore: { $avg: '$marks' },
+          totalResults: { $sum: 1 },
+        },
+      },
+
+      // 3. Get Class details (className)
+      {
+        $lookup: {
+          from: 'classes', // Collection name for 'Class' model
+          localField: '_id.class',
+          foreignField: '_id',
+          as: 'classInfo',
+        },
+      },
+      {
+        $unwind: '$classInfo',
+      },
+
+      // 4. Get Subject details (subjectName)
+      {
+        $lookup: {
+          from: 'subjects', // Collection name for 'Subject' model
+          localField: '_id.subject',
+          foreignField: '_id',
+          as: 'subjectInfo',
+        },
+      },
+      {
+        $unwind: '$subjectInfo',
+      },
+
+      // 5. Group by Class to nest subjects
+      {
+        $group: {
+          _id: '$_id.class',
+          className: { $first: '$classInfo.className' },
+          subjects: {
+            $push: {
+              subjectId: '$_id.subject',
+              subjectName: '$subjectInfo.subjectName',
+              avgScore: { $round: ['$avgScore', 2] }, // Round to 2 decimal places
+              totalResultsCount: '$totalResults',
+            },
+          },
+        },
+      },
+
+      // 6. Add a numeric field for proper sorting (1, 2, ... 10)
+      {
+        $addFields: {
+          classNameInt: { $toInt: '$className' },
+        },
+      },
+
+      // 7. Sort by class name (numeric)
+      {
+        $sort: {
+          classNameInt: 1,
+        },
+      },
+
+      // 8. Final formatting
+      {
+        $project: {
+          _id: 0,
+          classId: '$_id',
+          className: 1,
+          subjects: 1,
+        },
+      },
+    ]);
+
+    return res.json({
+      message: 'Results summary retrieved successfully',
+      summary: summary,
+    });
+  } catch (err) {
+    console.error('Get Subject Results Summary Error:', err);
+    return res
+      .status(500)
+      .json({ message: 'Server error', error: err.message });
+  }
+};
+
+// ---------------------- GET ATTENDANCE SUMMARY (Updated) ----------------------
+exports.getAttendanceSummary = async (req, res) => {
+  try {
+    const { period: requestedPeriod } = req.query; // e.g., 'today', 'this_week', 'last_week', 'all'
+    let effectivePeriod = 'today'; // Default to 'today'
+    const dateFilter = {};
+
+    // --- Date Range Logic ---
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Start of today
+
+    const dayOfWeek = today.getDay(); // 0 = Sunday, 1 = Monday, ...
+
+    if (requestedPeriod === 'this_week') {
+      effectivePeriod = 'this_week';
+      const startOfWeek = new Date(today);
+      startOfWeek.setDate(today.getDate() - dayOfWeek); // Go back to Sunday
+      const endOfWeek = new Date(startOfWeek);
+      endOfWeek.setDate(startOfWeek.getDate() + 7); // Start of next Sunday
+      dateFilter.date = { $gte: startOfWeek, $lt: endOfWeek };
+    } else if (requestedPeriod === 'last_week') {
+      effectivePeriod = 'last_week';
+      const startOfThisWeek = new Date(today);
+      startOfThisWeek.setDate(today.getDate() - dayOfWeek);
+      const startOfLastWeek = new Date(startOfThisWeek);
+      startOfLastWeek.setDate(startOfThisWeek.getDate() - 7); // Go back 7 more days
+      dateFilter.date = { $gte: startOfLastWeek, $lt: startOfThisWeek };
+    } else if (requestedPeriod === 'all') {
+      effectivePeriod = 'all-time';
+      // No date filter needed, dateFilter remains {}
+    } else {
+      // Default case: 'today' (also catches requestedPeriod === 'today' or undefined)
+      effectivePeriod = 'today';
+      const tomorrow = new Date(today);
+      tomorrow.setDate(today.getDate() + 1); // Start of tomorrow
+      dateFilter.date = { $gte: today, $lt: tomorrow };
+    }
+
+    // --- Aggregation Pipeline ---
+    const summary = await Attendance.aggregate([
+      // 1. Filter by date FIRST for performance
+      {
+        $match: dateFilter,
+      },
+
+      // 2. Add a field: 1 if 'present'/'late', 0 if 'absent'
+      {
+        $addFields: {
+          attended: {
+            $cond: {
+              if: { $in: ['$status', ['present', 'late']] },
+              then: 1,
+              else: 0,
+            },
+          },
+        },
+      },
+
+      // 3. Group by class and subject to get total counts
+      {
+        $group: {
+          _id: {
+            class: '$class',
+            subject: '$subject',
+          },
+          totalAttended: { $sum: '$attended' },
+          totalRecords: { $sum: 1 },
+        },
+      },
+
+      // 4. Calculate percentage
+      {
+        $addFields: {
+          attendancePercentage: {
+            $round: [
+              {
+                $multiply: [
+                  {
+                    $cond: {
+                      // Handle division by zero
+                      if: { $eq: ['$totalRecords', 0] },
+                      then: 0,
+                      else: { $divide: ['$totalAttended', '$totalRecords'] },
+                    },
+                  },
+                  100,
+                ],
+              },
+              2, // Round to 2 decimal places
+            ],
+          },
+        },
+      },
+
+      // 5. Look up Class details
+      {
+        $lookup: {
+          from: 'classes',
+          localField: '_id.class',
+          foreignField: '_id',
+          as: 'classInfo',
+        },
+      },
+      {
+        $unwind: '$classInfo',
+      },
+
+      // 6. Look up Subject details
+      {
+        $lookup: {
+          from: 'subjects',
+          localField: '_id.subject',
+          foreignField: '_id',
+          as: 'subjectInfo',
+        },
+      },
+      {
+        $unwind: '$subjectInfo',
+      },
+
+      // 7. Group by Class to nest subjects
+      {
+        $group: {
+          _id: '$_id.class',
+          className: { $first: '$classInfo.className' },
+          subjects: {
+            $push: {
+              subjectId: '$_id.subject',
+              subjectName: '$subjectInfo.subjectName',
+              attendancePercentage: '$attendancePercentage',
+              totalRecords: '$totalRecords',
+            },
+          },
+        },
+      },
+
+      // 8. Add numeric field for sorting (1, 2, ... 10)
+      {
+        $addFields: {
+          classNameInt: { $toInt: '$className' },
+        },
+      },
+
+      // 9. Sort by class name
+      {
+        $sort: {
+          classNameInt: 1,
+        },
+      },
+
+      // 10. Final formatting
+      {
+        $project: {
+          _id: 0,
+          classId: '$_id',
+          className: 1,
+          subjects: 1,
+        },
+      },
+    ]);
+
+    return res.json({
+      message: `Attendance summary retrieved for period: ${effectivePeriod}`,
+      summary: summary,
+    });
+  } catch (err) {
+    console.error('Get Attendance Summary Error:', err);
+    return res
+      .status(500)
+      .json({ message: 'Server error', error: err.message });
+  }
+};
+
+// ---------------------- DELETE USER BY ID (Admin) ----------------------
+exports.deleteUserById = async (req, res) => {
+  try {
+    const { id: userId } = req.params;
+
+    // 1. Validate the ID
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ message: 'Invalid user ID format' });
+    }
+
+    // 2. Find the user to be deleted
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // 3. CRITICAL: Prevent deleting an admin
+    // This assumes your admin role is named 'admin' as per your middleware
+    if (user.role === 'admin') {
+      return res.status(403).json({
+        message: 'Cannot delete an admin account via this route.',
+      });
+    }
+
+    // 4. Perform the delete
+    // WARNING: This is a HARD delete. This will remove the user from the
+    // database. This does NOT clean up references to this user in other
+    // collections (e.g., a parent's linkedStudents, an attendance record's
+    // 'markedBy' field, etc.).
+
+    await User.findByIdAndDelete(userId);
+
+    return res.json({
+      message: `User '${user.fullName}' (Role: ${user.role}) deleted successfully.`,
+    });
+  } catch (err) {
+    console.error('Delete User Error:', err);
+    return res
+      .status(500)
+      .json({ message: 'Server error', error: err.message });
   }
 };

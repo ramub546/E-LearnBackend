@@ -50,9 +50,9 @@ router.get('/admin/parents-with-students', protect, authorize('admin'), adminCon
 
 
 // ✅ ANNOUNCEMENT ROUTES
-router.post('/admin/announcements', protect, authorize('admin'), announcementController.createAnnouncement);
-router.get('/admin/announcements', protect, authorize('admin'), announcementController.getAllAnnouncements);
-router.get('/announcements', protect, announcementController.getUserAnnouncements);
+router.post('/admin/announcementsByAdmin', protect, authorize('admin'), announcementController.createAnnouncement);
+router.get('/admin/announcementsByAdmin', protect, authorize('admin'), announcementController.getAllAnnouncements);
+router.get('/announcementsByAdmin', protect, announcementController.getUserAnnouncements);
 
 // ✅ FORGET PASSWORD ROUTES (Available for all users)
 router.post('/forgot-password', forgetPasswordController.requestPasswordReset);

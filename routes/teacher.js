@@ -2,6 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
+const TeacherAnnouncement = require('../models/TeacherAnnouncement');
 const teacherController = require('../controllers/teacherController');
 const { uploadAssignmentMiddleware, uploadAssignment, getMyAssignments, downloadAssignment } = require('../controllers/teacherController');
 const {  getClassMarks, getStudentMarks,getMyUploadedMarks } = require('../controllers/teacherController');
@@ -46,16 +47,26 @@ router.put('/update-subjects', protect, teacherController.updateTeacherSubjects)
 router.post('/upload-note', protect, upload.single('file'), teacherController.uploadNote);
 router.get('/my-notes', protect, teacherController.getMyNotes);
 router.get('/download/:id', protect, teacherController.downloadNote);
+router.get('/note-count-by-class-subject', protect, teacherController.getNotesCountByClassAndSubject);//count of notes
 
 // ✅ TEACHER MEETING ROUTES
 router.post('/schedule-meeting', protect, teacherController.scheduleMeeting);
 router.post('/start-instant-meeting', protect, teacherController.startInstantMeeting);
 router.get('/my-meetings', protect, teacherController.getMyMeetings);
 
-
+//ASSIGNMNET
 router.post('/upload-assignment', protect, uploadAssignmentMiddleware, uploadAssignment);
 router.get('/my-assignments', protect, getMyAssignments);
 router.get('/download-assignment/:id', protect, downloadAssignment);
+//get assignment based on subject
+router.get('/my-assignments-by-class-subject', protect, teacherController.getMyAssignmentsBySubjectAndClass);
+//get assignment status
+router.get('/assignments-by-class-subject-status', protect, teacherController.getAssignmentsBySubjectClassStatus);
+//count of assignmnet by teacher,class,subject 
+router.get('/assignment-count-by-class-subject', protect, teacherController.getAssignmentsCountByClassAndSubject);
+
+
+
 // Add these routes
 
 // Change from params to body-based routes
@@ -73,10 +84,28 @@ module.exports = router;
 // Add Subject feature Neww
 router.post('/add-subject', protect, teacherController.addScheduledSubject);
 // Optional: Get subjects list for selected class
-router.get('/subjects/:classId', protect, teacherController.getSubjectsByClass);
+router.get('/subjects/:teacherId', protect, teacherController.getSubjectsByClass);
 
 
 
 router.post('/create-test', protect, teacherController.teacherCreateTest);//forTest
 router.get('/my-tests', protect, teacherController.getTeacherTests);
 
+
+
+
+//get Total Students For Teacher Under Subject
+router.get('/total-students-subject', protect, teacherController.getTotalStudentsForTeacherSubject); 
+//get Total total number of subjects a teacher is handling
+router.get('/total-classes', protect, teacherController.getTotalSubjectsForTeacher); 
+//get Total Students For Teacher 
+router.get('/total-students', protect, teacherController.getTotalStudentsUnderTeacher);
+
+
+
+
+// Add these routes for teacher announcements
+router.post('/create-announcement', protect, teacherController.createAnnouncement);
+router.get('/my-announcements', protect, teacherController.getMyAnnouncements);
+router.put('/update-announcement/:id', protect, teacherController.updateAnnouncement);
+router.delete('/delete-announcement/:id', protect, teacherController.deleteAnnouncement);

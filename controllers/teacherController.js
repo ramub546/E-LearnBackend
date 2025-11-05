@@ -13,6 +13,7 @@ const Test = require('../models/Test'); // For clarity
 const ScheduledSubject = require('../models/scheduledSubject'); //Neww
 const schedule = require('node-schedule');//forTest
 const Announcement = require('../models/Announcement');
+const { DateTime } = require('luxon');
 
 // ... other imports
 
@@ -1275,11 +1276,12 @@ exports.addScheduledSubject = async (req, res) => {
 // ------------------- SUBJECT LIST FOR SELECTED CLASS (Approved Only) -------------------
 exports.getSubjectsByClass = async (req, res) => {
   try {
-    const { classId } = req.params;
+    const { teacherId } = req.params;
 
     // Fetch only approved scheduled subjects for this class
-    const approvedSubjects = await ScheduledSubject.find({ class: classId, status: 'approved' })
-      .populate('subject', 'subjectName')   // Get subject name
+    const approvedSubjects = await ScheduledSubject.find({ teacher: teacherId, status: 'approved' })
+      .populate('subject', 'subjectName')
+      .populate('class', 'className')   // Get subject name
       .populate('teacher', 'fullName email'); // Optional: include teacher info
 
     if (!approvedSubjects || approvedSubjects.length === 0) {
@@ -1292,6 +1294,7 @@ exports.getSubjectsByClass = async (req, res) => {
       subjectName: item.subject.subjectName,
       teacherName: item.teacher.fullName,
       teacherEmail: item.teacher.email,
+      className: item.class.className
     }));
 
     res.status(200).json({ subjects: subjectsForFrontend });
@@ -1301,9 +1304,15 @@ exports.getSubjectsByClass = async (req, res) => {
   }
 };
 
+// new test
+const countryToTimezone = {
+  India: 'Asia/Kolkata',
+  USA: 'America/New_York',
+  UK: 'Europe/London',
+  // add more countries as needed
+};
 
-// Create a new test   forTest
-// Create a new test forTest
+// Create a new test for teacher
 exports.teacherCreateTest = async (req, res) => {
   try {
     const { title, subject, class: classId, totalMarks, testDate, link } = req.body;
@@ -1316,36 +1325,57 @@ exports.teacherCreateTest = async (req, res) => {
       });
     }
 
-    let testDateObj;
+    // 1️⃣ Get teacher's timezone
+    const teacher = await User.findById(req.user?._id);
+    const teacherRegion = countryToTimezone[teacher?.countryRegion] || 'UTC';
+
+    // 2️⃣ Parse and convert testDate to UTC
+    let testDateUTC;
 
     if (testDate) {
-      // If testDate is provided, handle both ISO 8601 and "dd-mm-yyyy HH:mm"
+      let localDateTime;
+
       if (testDate.includes('T')) {
-        // ISO format
-        testDateObj = new Date(testDate);
+        // ISO format from frontend calendar
+        localDateTime = DateTime.fromISO(testDate, { zone: teacherRegion });
       } else {
-        // dd-mm-yyyy HH:mm format
+        // "dd-mm-yyyy HH:mm" format
         const [datePart, timePart] = testDate.split(' ');
         if (!datePart || !timePart) {
           return res.status(400).json({ success: false, message: 'Invalid testDate format.' });
         }
         const [day, month, year] = datePart.split('-');
         const [hours, minutes] = timePart.split(':');
-        testDateObj = new Date(year, month - 1, day, hours, minutes);
+
+        localDateTime = DateTime.fromObject({
+          day: parseInt(day, 10),
+          month: parseInt(month, 10),
+          year: parseInt(year, 10),
+          hour: parseInt(hours, 10),
+          minute: parseInt(minutes, 10)
+        }, { zone: teacherRegion });
       }
+
+      if (!localDateTime.isValid) {
+        return res.status(400).json({ success: false, message: 'Could not parse testDate. Check format and timezone.' });
+      }
+
+      testDateUTC = localDateTime.toUTC().toJSDate();
     } else {
-      // If testDate is missing (like from scheduled job), default to current date/time
-      testDateObj = new Date();
+      // Default to current UTC time if missing
+      testDateUTC = new Date();
     }
 
+    // 3️⃣ Save the test
     const newTest = await Test.create({
       title,
       subject,
       class: classId,
       totalMarks,
-      testDate: testDateObj,
-      link, // <-- save the link
-      createdBy: req.user?._id || null, // handle jobs without a logged-in user
+      testDate: testDateUTC,
+      link,
+      createdBy: req.user?._id || null,
+      status: 'pending'
     });
 
     res.status(201).json({ success: true, test: newTest });
@@ -1354,17 +1384,659 @@ exports.teacherCreateTest = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
-
 // Get all tests created by teacher
 exports.getTeacherTests = async (req, res) => {
   try {
+    const teacher = await User.findById(req.user?._id);
+    const teacherRegion = teacher?.countryRegion || 'UTC';
+
     const tests = await Test.find({ createdBy: req.user._id })
       .populate('subject')
       .populate('class');
 
-    res.status(200).json({ success: true, tests });
+    // Convert testDate from UTC → teacher's local timezone
+    const testsWithLocalTime = tests.map(test => ({
+      ...test.toObject(),
+      testDateLocal: DateTime.fromJSDate(test.testDate)
+                             .setZone(teacherRegion)
+                             .toLocaleString(DateTime.DATETIME_MED)
+    }));
+
+    res.status(200).json({ success: true, tests: testsWithLocalTime });
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+const TeacherAnnouncement = require('../models/TeacherAnnouncement');
+// ---------------------- CREATE ANNOUNCEMENT ----------------------
+exports.createAnnouncement = async (req, res) => {
+  try {
+    const { 
+      title, 
+      description, 
+      announcementType, 
+      className, 
+      subjectName,
+      eventDate,
+      eventLocation 
+    } = req.body;
+
+    const teacherId = req.user.id;
+
+    // Validation
+    if (!title || !description || !announcementType) {
+      return res.status(400).json({ 
+        message: 'Title, description, and announcement type are required' 
+      });
+    }
+
+    if (announcementType === 'student' && (!className || !subjectName)) {
+      return res.status(400).json({ 
+        message: 'Class name and subject name are required for student announcements' 
+      });
+    }
+
+    let classData = null;
+    let subject = null;
+
+    // For student announcements, validate class and subject
+    if (announcementType === 'student') {
+      // Find class
+      const cleanClassName = className.toString().replace(/"/g, '').trim();
+      classData = await Class.findOne({ className: cleanClassName });
+      if (!classData) {
+        return res.status(400).json({ message: `Class "${cleanClassName}" not found` });
+      }
+
+      // Find subject
+      subject = await Subject.findOne({
+        subjectName: { $regex: new RegExp(`^${subjectName}$`, 'i') },
+        class: classData._id
+      });
+
+      if (!subject) {
+        return res.status(400).json({ 
+          message: `Subject "${subjectName}" not found for class ${cleanClassName}` 
+        });
+      }
+    }
+
+    // Create announcement
+    const announcement = new TeacherAnnouncement({
+      title,
+      description,
+      announcementType,
+      class: classData ? classData._id : undefined,
+      subject: subject ? subject._id : undefined,
+      createdBy: teacherId,
+      eventDate: eventDate ? new Date(eventDate) : undefined,
+      eventLocation: eventLocation || undefined,
+      // Events go to admin for approval, student announcements are auto-approved
+      status: announcementType === 'student' ? 'approved' : 'pending'
+    });
+
+    await announcement.save();
+
+    // Populate for response
+    await announcement.populate('class', 'className');
+    await announcement.populate('subject', 'subjectName');
+    await announcement.populate('createdBy', 'fullName');
+
+    return res.status(201).json({
+      message: announcementType === 'student' 
+        ? 'Announcement created successfully for students' 
+        : 'Event announcement submitted for admin approval',
+      announcement: {
+        id: announcement._id,
+        title: announcement.title,
+        announcementType: announcement.announcementType,
+        class: announcement.class ? announcement.class.className : null,
+        subject: announcement.subject ? announcement.subject.subjectName : null,
+        status: announcement.status,
+        createdAt: announcement.createdAt
+      }
+    });
+
+  } catch (error) {
+    console.error('Create Announcement Error:', error);
+    return res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// ---------------------- GET MY ANNOUNCEMENTS ----------------------
+exports.getMyAnnouncements = async (req, res) => {
+  try {
+    const teacherId = req.user.id;
+    
+    const announcements = await TeacherAnnouncement.find({ createdBy: teacherId })
+      .populate('class', 'className')
+      .populate('subject', 'subjectName')
+      .populate('createdBy', 'fullName')
+      .populate('approvedBy', 'fullName')
+      .sort({ createdAt: -1 });
+
+    return res.json({
+      total: announcements.length,
+      announcements: announcements
+    });
+
+  } catch (error) {
+    console.error('Get My Announcements Error:', error);
+    return res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// ---------------------- UPDATE ANNOUNCEMENT ----------------------
+exports.updateAnnouncement = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, description, eventDate, eventLocation } = req.body;
+    const teacherId = req.user.id;
+
+    const announcement = await TeacherAnnouncement.findOne({ 
+      _id: id, 
+      createdBy: teacherId,
+      status: { $in: ['pending', 'approved'] }
+    });
+
+    if (!announcement) {
+      return res.status(404).json({ message: 'Announcement not found or cannot be updated' });
+    }
+
+    // Update fields
+    if (title) announcement.title = title;
+    if (description) announcement.description = description;
+    if (eventDate) announcement.eventDate = new Date(eventDate);
+    if (eventLocation) announcement.eventLocation = eventLocation;
+
+    // If it was approved, send back to pending for admin review
+    if (announcement.status === 'approved' && announcement.announcementType === 'event') {
+      announcement.status = 'pending';
+    }
+
+    await announcement.save();
+    await announcement.populate('class', 'className');
+    await announcement.populate('subject', 'subjectName');
+
+    return res.json({
+      message: 'Announcement updated successfully',
+      announcement: announcement
+    });
+
+  } catch (error) {
+    console.error('Update Announcement Error:', error);
+    return res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// ---------------------- DELETE ANNOUNCEMENT ----------------------
+exports.deleteAnnouncement = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const teacherId = req.user.id;
+
+    const announcement = await TeacherAnnouncement.findOne({ 
+      _id: id, 
+      createdBy: teacherId 
+    });
+
+    if (!announcement) {
+      return res.status(404).json({ message: 'Announcement not found' });
+    }
+
+    await TeacherAnnouncement.findByIdAndDelete(id);
+
+    return res.json({
+      message: 'Announcement deleted successfully'
+    });
+
+  } catch (error) {
+    console.error('Delete Announcement Error:', error);
+    return res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+
+
+// Get all tests created by teacher
+exports.getTeacherTests = async (req, res) => {
+  try {
+    const teacher = await User.findById(req.user?._id);
+    const teacherRegion = teacher?.countryRegion || 'UTC';
+
+    const tests = await Test.find({ createdBy: req.user._id })
+      .populate('subject')
+      .populate('class');
+
+    // Convert testDate from UTC → teacher's local timezone
+    const testsWithLocalTime = tests.map(test => ({
+      ...test.toObject(),
+      testDateLocal: DateTime.fromJSDate(test.testDate)
+                             .setZone(teacherRegion)
+                             .toLocaleString(DateTime.DATETIME_MED)
+    }));
+
+    res.status(200).json({ success: true, tests: testsWithLocalTime });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+// -------------------- GET TOTAL NOTES FOR A SUBJECT BY TEACHER--------------------
+
+exports.getNotesCountByClassAndSubject = async (req, res) => {
+  try {
+    const teacherId = req.user._id;
+    const { className, subjectName } = req.query;
+
+    if (!className || !subjectName) {
+      return res.status(400).json({ message: 'Both class name and subject name are required.' });
+    }
+
+    const cleanClassName = className.toString().replace(/"/g, '').trim();
+
+    // Find class
+    const classData = await Class.findOne({ className: cleanClassName });
+    if (!classData) {
+      return res.status(404).json({ message: `Class "${cleanClassName}" not found.` });
+    }
+
+    // Find subject for that class
+    const subject = await Subject.findOne({
+      subjectName: { $regex: new RegExp(`^${subjectName}$`, 'i') },
+      class: classData._id
+    });
+
+    if (!subject) {
+      return res.status(404).json({ message: `Subject "${subjectName}" not found for class "${cleanClassName}".` });
+    }
+
+    // Count notes uploaded by teacher for this class and subject
+    const noteCount = await Note.countDocuments({
+      uploadedBy: teacherId,
+      class: classData._id,
+      subject: subject._id
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Note count for class and subject fetched successfully.',
+      teacherId,
+      className: cleanClassName,
+      subjectName,
+      noteCount
+    });
+
+  } catch (error) {
+    console.error('Error fetching note count:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while fetching note count.',
+      error: error.message
+    });
+  }
+};
+
+// -------------------- GET TOTAL TEST FOR A SUBJECT BY TEACHER --------------------
+
+exports.getTotalTestsByTeacherForSubject = async (req, res) => {
+  try {
+    const teacherId = req.user._id;
+    const { subjectName, className } = req.query;
+
+    if (!subjectName || !className) {
+      return res.status(400).json({ message: 'Subject name and class name are required.' });
+    }
+
+    const cleanClassName = className.toString().replace(/"/g, '').trim();
+
+    // Find class
+    const classData = await Class.findOne({ className: cleanClassName });
+    if (!classData) {
+      return res.status(404).json({ message: `Class "${cleanClassName}" not found.` });
+    }
+
+    // Find subject for that class
+    const subject = await Subject.findOne({
+      subjectName: { $regex: new RegExp(`^${subjectName}$`, 'i') },
+      class: classData._id
+    });
+
+    if (!subject) {
+      return res.status(404).json({ message: `Subject "${subjectName}" not found for class "${cleanClassName}".` });
+    }
+
+    // Count tests created by teacher for that subject and class
+    const totalTests = await Test.countDocuments({
+      createdBy: teacherId,
+      subject: subject._id,
+      class: classData._id
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: `Total tests for ${subjectName} in class ${cleanClassName} by teacher.`,
+      subjectName,
+      className: cleanClassName,
+      totalTests
+    });
+
+  } catch (error) {
+    console.error('Error fetching total tests:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while fetching total tests.',
+      error: error.message
+    });
+  }
+};
+
+// -------------------- GET ASSIGMNET FOR SUBJECT BY TEACHER --------------------
+
+exports.getMyAssignmentsBySubjectAndClass = async (req, res) => {
+  try {
+    const teacherId = req.user._id;
+    const { subjectName, className } = req.query;
+
+    if (!subjectName || !className) {
+      return res.status(400).json({ message: 'Subject name and class name are required.' });
+    }
+
+    const cleanClassName = className.toString().replace(/"/g, '').trim();
+
+    // Find class
+    const classData = await Class.findOne({ className: cleanClassName });
+    if (!classData) {
+      return res.status(404).json({ message: `Class "${cleanClassName}" not found.` });
+    }
+
+    // Find subject for that class
+    const subject = await Subject.findOne({
+      subjectName: { $regex: new RegExp(`^${subjectName}$`, 'i') },
+      class: classData._id
+    });
+
+    if (!subject) {
+      return res.status(404).json({ message: `Subject "${subjectName}" not found for class "${cleanClassName}".` });
+    }
+
+    // Fetch assignments
+    const assignments = await Assignment.find({
+      uploadedBy: teacherId,
+      class: classData._id,
+      subject: subject._id
+    })
+      .populate('subject', 'subjectName')
+      .populate('class', 'className')
+      .select('-fileData')
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Filtered assignments fetched successfully.',
+      total: assignments.length,
+      data: assignments
+    });
+
+  } catch (error) {
+    console.error('Get Filtered Assignments Error:', error);
+    return res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// -------------------- GET ACTIVE & COMPLETED ASSIGNMENTS --------------------
+exports.getAssignmentsBySubjectClassStatus = async (req, res) => {
+  try {
+    const teacherId = req.user._id;
+    const { subjectName, className, status } = req.query;
+
+    if (!subjectName || !className || !status) {
+      return res.status(400).json({ message: 'Subject name, class name, and status are required.' });
+    }
+
+    const cleanClassName = className.toString().replace(/"/g, '').trim();
+    const normalizedStatus = status.toLowerCase();
+
+    if (!['active', 'completed'].includes(normalizedStatus)) {
+      return res.status(400).json({ message: 'Status must be either "active" or "completed".' });
+    }
+
+    // Find class
+    const classData = await Class.findOne({ className: cleanClassName });
+    if (!classData) {
+      return res.status(404).json({ message: `Class "${cleanClassName}" not found.` });
+    }
+
+    // Find subject for that class
+    const subject = await Subject.findOne({
+      subjectName: { $regex: new RegExp(`^${subjectName}$`, 'i') },
+      class: classData._id
+    });
+
+    if (!subject) {
+      return res.status(404).json({ message: `Subject "${subjectName}" not found for class "${cleanClassName}".` });
+    }
+
+    // Fetch assignments by teacher for this class and subject
+    const assignments = await Assignment.find({
+      uploadedBy: teacherId,
+      class: classData._id,
+      subject: subject._id
+    })
+      .populate('subject', 'subjectName')
+      .populate('class', 'className')
+      .sort({ dueDate: 1 })
+      .lean();
+
+    const now = new Date();
+
+    // Filter by status with fallback to assignment.status
+    const filtered = assignments.filter((assignment) => {
+      if (normalizedStatus === 'active') {
+        return (
+          (assignment.startDate && now >= assignment.startDate && now <= assignment.dueDate) ||
+          (!assignment.startDate && assignment.status === 'active')
+        );
+      }
+      if (normalizedStatus === 'completed') {
+        return (
+          (assignment.dueDate && now > assignment.dueDate) ||
+          (!assignment.dueDate && assignment.status === 'completed')
+        );
+      }
+      return false;
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: `Assignments (${normalizedStatus}) for ${subjectName} in class ${cleanClassName}`,
+      total: filtered.length,
+      data: filtered
+    });
+
+  } catch (error) {
+    console.error('Error fetching filtered assignments:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while fetching assignments.',
+      error: error.message
+    });
+  }
+};
+// -------------------- GET TOTAL COUNT ASSIGNMENTS FOR A SUBJECT BY TEACHER--------------------
+
+exports.getAssignmentsCountByClassAndSubject = async (req, res) => {
+  try {
+    const teacherId = req.user._id;
+    const { className, subjectName } = req.query;
+
+    if (!className || !subjectName) {
+      return res.status(400).json({ message: 'Both class name and subject name are required.' });
+    }
+
+    const cleanClassName = className.toString().replace(/"/g, '').trim();
+
+    // Find class
+    const classData = await Class.findOne({ className: cleanClassName });
+    if (!classData) {
+      return res.status(404).json({ message: `Class "${cleanClassName}" not found.` });
+    }
+
+    // Find subject for that class
+    const subject = await Subject.findOne({
+      subjectName: { $regex: new RegExp(`^${subjectName}$`, 'i') },
+      class: classData._id
+    });
+
+    if (!subject) {
+      return res.status(404).json({ message: `Subject "${subjectName}" not found for class "${cleanClassName}".` });
+    }
+
+    // Count assignments uploaded by teacher for this class and subject
+    const assignmentCount = await Assignment.countDocuments({
+      uploadedBy: teacherId,
+      class: classData._id,
+      subject: subject._id
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Assignment count for class and subject fetched successfully.',
+      teacherId,
+      className: cleanClassName,
+      subjectName,
+      assignmentCount
+    });
+
+  } catch (error) {
+    console.error('Error fetching assignment count:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while fetching assignment count.',
+      error: error.message
+    });
+  }
+};
+
+// -------------------- GET TOTAL NUMBER OF STUDENT FOR A SUBJECT BY TEACHER--------------------
+exports.getTotalStudentsForTeacherSubject = async (req, res) => {
+  try {
+    const teacherId = req.user._id;
+    const { subjectName } = req.query;
+
+    if (!subjectName) {
+      return res.status(400).json({ message: 'Subject name is required' });
+    }
+
+    // 1. Find the subject by name (case-insensitive)
+    const subject = await Subject.findOne({
+      subjectName: { $regex: new RegExp(`^${subjectName}$`, 'i') }
+    });
+
+    if (!subject) {
+      return res.status(404).json({ message: 'Subject not found' });
+    }
+
+    // 2. Find all approved ScheduledSubjects for this teacher and subject
+    const scheduled = await ScheduledSubject.find({
+      teacher: teacherId,
+      subject: subject._id,
+      status: 'approved'
+    }).select('class');
+
+    if (!scheduled.length) {
+      return res.status(404).json({ message: 'No scheduled classes found for this subject under this teacher' });
+    }
+
+    const classIds = scheduled.map(s => s.class);
+
+    // 3. Count all students in those classes
+    const totalStudents = await User.countDocuments({
+      role: 'student',
+      class: { $in: classIds }
+    });
+   
+    res.status(200).json({
+      message: `Total students for ${subjectName} under this teacher`,
+      totalStudents
+    });
+
+  } catch (error) {
+    console.error('Error fetching total students:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+// -------------------- GET TOTAL NUMBER OF CLASSES FOR TEACHER--------------------
+
+
+exports.getTotalSubjectsForTeacher = async (req, res) => {
+  try {
+    const teacherId = req.user._id;
+
+    // Find all approved scheduled subjects for this teacher
+    const scheduled = await ScheduledSubject.find({
+      teacher: teacherId,
+      status: 'approved'
+    }).select('subject');
+
+    // Extract unique subject IDs
+    const uniqueSubjectIds = [...new Set(scheduled.map(s => s.subject.toString()))];
+
+    res.status(200).json({
+      message: 'Total subjects handled by this teacher',
+      totalSubjects: uniqueSubjectIds.length,
+      subjectIds: uniqueSubjectIds
+    });
+
+  } catch (error) {
+    console.error('Error fetching subjects:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// -------------------- GET TOTAL NUMBER OF STUDENTS UNDER TEACHER--------------------
+exports.getTotalStudentsUnderTeacher = async (req, res) => {
+  try {
+    const teacherId = req.user._id;
+
+    // 1. Find all approved scheduled subjects for this teacher
+    const scheduledSubjects = await ScheduledSubject.find({
+      teacher: teacherId,
+      status: 'approved'
+    }).select('class');
+
+    if (!scheduledSubjects.length) {
+      return res.status(200).json({
+        success: true,
+        message: 'No scheduled subjects found for this teacher',
+        totalStudents: 0
+      });
+    }
+
+    // 2. Extract unique class IDs
+    const classIds = [...new Set(scheduledSubjects.map(s => s.class.toString()))];
+
+    // 3. Count all students in those classes
+    const totalStudents = await User.countDocuments({
+      role: 'student',
+      class: { $in: classIds }
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Total students under this teacher across all classes and subjects',
+      totalStudents
+    });
+
+  } catch (error) {
+    console.error('Error fetching total students under teacher:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while fetching student count',
+      totalStudents: 0,
+      error: error.message
+    });
   }
 };

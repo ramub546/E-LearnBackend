@@ -116,6 +116,7 @@ router.get(
   studentController.getMyUpcomingDeadlines
 );
 
+router.get('/announcements', protect, parentController.getParentAnnouncements);
 module.exports = router;
 
 module.exports = router;

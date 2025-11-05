@@ -54,10 +54,19 @@ router.post('/schedule-meeting', protect, teacherController.scheduleMeeting);
 router.post('/start-instant-meeting', protect, teacherController.startInstantMeeting);
 router.get('/my-meetings', protect, teacherController.getMyMeetings);
 
-
+//ASSIGNMNET
 router.post('/upload-assignment', protect, uploadAssignmentMiddleware, uploadAssignment);
 router.get('/my-assignments', protect, getMyAssignments);
 router.get('/download-assignment/:id', protect, downloadAssignment);
+//get assignment based on subject
+router.get('/my-assignments-by-class-subject', protect, teacherController.getMyAssignmentsBySubjectAndClass);
+//get assignment status
+router.get('/assignments-by-class-subject-status', protect, teacherController.getAssignmentsBySubjectClassStatus);
+//count of assignmnet by teacher,class,subject 
+router.get('/assignment-count-by-class-subject', protect, teacherController.getAssignmentsCountByClassAndSubject);
+
+
+
 // Add these routes
 
 // Change from params to body-based routes
@@ -81,6 +90,17 @@ router.get('/subjects/:teacherId', protect, teacherController.getSubjectsByClass
 
 router.post('/create-test', protect, teacherController.teacherCreateTest);//forTest
 router.get('/my-tests', protect, teacherController.getTeacherTests);
+
+
+
+
+//get Total Students For Teacher Under Subject
+router.get('/total-students-subject', protect, teacherController.getTotalStudentsForTeacherSubject); 
+//get Total total number of subjects a teacher is handling
+router.get('/total-classes', protect, teacherController.getTotalSubjectsForTeacher); 
+//get Total Students For Teacher 
+router.get('/total-students', protect, teacherController.getTotalStudentsUnderTeacher);
+
 
 
 

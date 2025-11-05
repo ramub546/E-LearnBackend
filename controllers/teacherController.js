@@ -1732,3 +1732,311 @@ exports.getTotalTestsByTeacherForSubject = async (req, res) => {
     });
   }
 };
+
+// -------------------- GET ASSIGMNET FOR SUBJECT BY TEACHER --------------------
+
+exports.getMyAssignmentsBySubjectAndClass = async (req, res) => {
+  try {
+    const teacherId = req.user._id;
+    const { subjectName, className } = req.query;
+
+    if (!subjectName || !className) {
+      return res.status(400).json({ message: 'Subject name and class name are required.' });
+    }
+
+    const cleanClassName = className.toString().replace(/"/g, '').trim();
+
+    // Find class
+    const classData = await Class.findOne({ className: cleanClassName });
+    if (!classData) {
+      return res.status(404).json({ message: `Class "${cleanClassName}" not found.` });
+    }
+
+    // Find subject for that class
+    const subject = await Subject.findOne({
+      subjectName: { $regex: new RegExp(`^${subjectName}$`, 'i') },
+      class: classData._id
+    });
+
+    if (!subject) {
+      return res.status(404).json({ message: `Subject "${subjectName}" not found for class "${cleanClassName}".` });
+    }
+
+    // Fetch assignments
+    const assignments = await Assignment.find({
+      uploadedBy: teacherId,
+      class: classData._id,
+      subject: subject._id
+    })
+      .populate('subject', 'subjectName')
+      .populate('class', 'className')
+      .select('-fileData')
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Filtered assignments fetched successfully.',
+      total: assignments.length,
+      data: assignments
+    });
+
+  } catch (error) {
+    console.error('Get Filtered Assignments Error:', error);
+    return res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// -------------------- GET ACTIVE & COMPLETED ASSIGNMENTS --------------------
+exports.getAssignmentsBySubjectClassStatus = async (req, res) => {
+  try {
+    const teacherId = req.user._id;
+    const { subjectName, className, status } = req.query;
+
+    if (!subjectName || !className || !status) {
+      return res.status(400).json({ message: 'Subject name, class name, and status are required.' });
+    }
+
+    const cleanClassName = className.toString().replace(/"/g, '').trim();
+    const normalizedStatus = status.toLowerCase();
+
+    if (!['active', 'completed'].includes(normalizedStatus)) {
+      return res.status(400).json({ message: 'Status must be either "active" or "completed".' });
+    }
+
+    // Find class
+    const classData = await Class.findOne({ className: cleanClassName });
+    if (!classData) {
+      return res.status(404).json({ message: `Class "${cleanClassName}" not found.` });
+    }
+
+    // Find subject for that class
+    const subject = await Subject.findOne({
+      subjectName: { $regex: new RegExp(`^${subjectName}$`, 'i') },
+      class: classData._id
+    });
+
+    if (!subject) {
+      return res.status(404).json({ message: `Subject "${subjectName}" not found for class "${cleanClassName}".` });
+    }
+
+    // Fetch assignments by teacher for this class and subject
+    const assignments = await Assignment.find({
+      uploadedBy: teacherId,
+      class: classData._id,
+      subject: subject._id
+    })
+      .populate('subject', 'subjectName')
+      .populate('class', 'className')
+      .sort({ dueDate: 1 })
+      .lean();
+
+    const now = new Date();
+
+    // Filter by status with fallback to assignment.status
+    const filtered = assignments.filter((assignment) => {
+      if (normalizedStatus === 'active') {
+        return (
+          (assignment.startDate && now >= assignment.startDate && now <= assignment.dueDate) ||
+          (!assignment.startDate && assignment.status === 'active')
+        );
+      }
+      if (normalizedStatus === 'completed') {
+        return (
+          (assignment.dueDate && now > assignment.dueDate) ||
+          (!assignment.dueDate && assignment.status === 'completed')
+        );
+      }
+      return false;
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: `Assignments (${normalizedStatus}) for ${subjectName} in class ${cleanClassName}`,
+      total: filtered.length,
+      data: filtered
+    });
+
+  } catch (error) {
+    console.error('Error fetching filtered assignments:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while fetching assignments.',
+      error: error.message
+    });
+  }
+};
+// -------------------- GET TOTAL COUNT ASSIGNMENTS FOR A SUBJECT BY TEACHER--------------------
+
+exports.getAssignmentsCountByClassAndSubject = async (req, res) => {
+  try {
+    const teacherId = req.user._id;
+    const { className, subjectName } = req.query;
+
+    if (!className || !subjectName) {
+      return res.status(400).json({ message: 'Both class name and subject name are required.' });
+    }
+
+    const cleanClassName = className.toString().replace(/"/g, '').trim();
+
+    // Find class
+    const classData = await Class.findOne({ className: cleanClassName });
+    if (!classData) {
+      return res.status(404).json({ message: `Class "${cleanClassName}" not found.` });
+    }
+
+    // Find subject for that class
+    const subject = await Subject.findOne({
+      subjectName: { $regex: new RegExp(`^${subjectName}$`, 'i') },
+      class: classData._id
+    });
+
+    if (!subject) {
+      return res.status(404).json({ message: `Subject "${subjectName}" not found for class "${cleanClassName}".` });
+    }
+
+    // Count assignments uploaded by teacher for this class and subject
+    const assignmentCount = await Assignment.countDocuments({
+      uploadedBy: teacherId,
+      class: classData._id,
+      subject: subject._id
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Assignment count for class and subject fetched successfully.',
+      teacherId,
+      className: cleanClassName,
+      subjectName,
+      assignmentCount
+    });
+
+  } catch (error) {
+    console.error('Error fetching assignment count:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while fetching assignment count.',
+      error: error.message
+    });
+  }
+};
+
+// -------------------- GET TOTAL NUMBER OF STUDENT FOR A SUBJECT BY TEACHER--------------------
+exports.getTotalStudentsForTeacherSubject = async (req, res) => {
+  try {
+    const teacherId = req.user._id;
+    const { subjectName } = req.query;
+
+    if (!subjectName) {
+      return res.status(400).json({ message: 'Subject name is required' });
+    }
+
+    // 1. Find the subject by name (case-insensitive)
+    const subject = await Subject.findOne({
+      subjectName: { $regex: new RegExp(`^${subjectName}$`, 'i') }
+    });
+
+    if (!subject) {
+      return res.status(404).json({ message: 'Subject not found' });
+    }
+
+    // 2. Find all approved ScheduledSubjects for this teacher and subject
+    const scheduled = await ScheduledSubject.find({
+      teacher: teacherId,
+      subject: subject._id,
+      status: 'approved'
+    }).select('class');
+
+    if (!scheduled.length) {
+      return res.status(404).json({ message: 'No scheduled classes found for this subject under this teacher' });
+    }
+
+    const classIds = scheduled.map(s => s.class);
+
+    // 3. Count all students in those classes
+    const totalStudents = await User.countDocuments({
+      role: 'student',
+      class: { $in: classIds }
+    });
+   
+    res.status(200).json({
+      message: `Total students for ${subjectName} under this teacher`,
+      totalStudents
+    });
+
+  } catch (error) {
+    console.error('Error fetching total students:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+// -------------------- GET TOTAL NUMBER OF CLASSES FOR TEACHER--------------------
+
+
+exports.getTotalSubjectsForTeacher = async (req, res) => {
+  try {
+    const teacherId = req.user._id;
+
+    // Find all approved scheduled subjects for this teacher
+    const scheduled = await ScheduledSubject.find({
+      teacher: teacherId,
+      status: 'approved'
+    }).select('subject');
+
+    // Extract unique subject IDs
+    const uniqueSubjectIds = [...new Set(scheduled.map(s => s.subject.toString()))];
+
+    res.status(200).json({
+      message: 'Total subjects handled by this teacher',
+      totalSubjects: uniqueSubjectIds.length,
+      subjectIds: uniqueSubjectIds
+    });
+
+  } catch (error) {
+    console.error('Error fetching subjects:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// -------------------- GET TOTAL NUMBER OF STUDENTS UNDER TEACHER--------------------
+exports.getTotalStudentsUnderTeacher = async (req, res) => {
+  try {
+    const teacherId = req.user._id;
+
+    // 1. Find all approved scheduled subjects for this teacher
+    const scheduledSubjects = await ScheduledSubject.find({
+      teacher: teacherId,
+      status: 'approved'
+    }).select('class');
+
+    if (!scheduledSubjects.length) {
+      return res.status(200).json({
+        success: true,
+        message: 'No scheduled subjects found for this teacher',
+        totalStudents: 0
+      });
+    }
+
+    // 2. Extract unique class IDs
+    const classIds = [...new Set(scheduledSubjects.map(s => s.class.toString()))];
+
+    // 3. Count all students in those classes
+    const totalStudents = await User.countDocuments({
+      role: 'student',
+      class: { $in: classIds }
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Total students under this teacher across all classes and subjects',
+      totalStudents
+    });
+
+  } catch (error) {
+    console.error('Error fetching total students under teacher:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while fetching student count',
+      totalStudents: 0,
+      error: error.message
+    });
+  }
+};

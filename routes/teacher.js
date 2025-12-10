@@ -81,6 +81,7 @@ router.get('/subjects/:teacherId', protect, teacherController.getSubjectsByClass
 
 router.post('/create-test', protect, teacherController.teacherCreateTest);//forTest
 router.get('/my-tests', protect, teacherController.getTeacherTests);
+router.get('/test-count-by-class-subject', protect, teacherController.getTotalTestsByTeacherForSubject);
 
 
 

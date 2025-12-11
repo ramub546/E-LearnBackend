@@ -24,14 +24,17 @@ exports.teacherSignup = async (req, res) => {
       fullName,
       email,
       phone,
+      gender,
       countryRegion,
+      state,   
+      city,    
       qualification,
       password,
       confirmPassword
     } = req.body;
 
     // ✅ Required field check
-    if (!fullName || !email || !phone || !countryRegion  || !qualification || !password || !confirmPassword) {
+    if (!fullName || !email || !phone || !gender || !countryRegion || !state || !city || !qualification || !password || !confirmPassword) {
       return res.status(400).json({ message: 'Missing required fields' });
     }
 
@@ -44,6 +47,13 @@ exports.teacherSignup = async (req, res) => {
     if (!/^\+\d{1,3}\d{7,14}$/.test(phone)) {
       return res.status(400).json({ message: 'Phone number must include country code' });
     }
+
+    // ✅ Gender validation
+    const allowedGenders = ['Male', 'Female', 'Other'];
+    if (!allowedGenders.includes(gender)) {
+      return res.status(400).json({ message: 'Invalid gender value' });
+    }
+
 
     // ✅ Password validation
     if (password !== confirmPassword) {
@@ -83,7 +93,10 @@ exports.teacherSignup = async (req, res) => {
       fullName,
       email: email.toLowerCase(),
       phone,
+      gender,
       countryRegion,
+      state,  
+      city, 
       qualification,
       idProofUrl,
       passwordHash,

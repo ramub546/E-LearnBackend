@@ -75,7 +75,14 @@ const userSchema = new mongoose.Schema(
     ],
 
     // Teacher-specific fields
+    gender: { 
+      type: String, 
+      enum: ['Male', 'Female', 'Other'], 
+      trim: true 
+    },
     countryRegion: { type: String, trim: true },
+    state: { type: String, trim: true },
+    city: { type: String, trim: true },
   subjectSpecialization: [{ 
     type: mongoose.Schema.Types.ObjectId, 
     ref: 'Subject' 

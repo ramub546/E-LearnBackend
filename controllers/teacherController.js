@@ -5,6 +5,7 @@ const { sendCustomEmail } = require('../utils/mailer'); // ✅ Use sendCustomEma
 const User = require('../models/User');
 const { sendOtpEmail } = require('../utils/mailer');
 const Meeting = require('../models/Meeting');
+const Note = require('../models/Note');
 const Class = require('../models/Class');
 const Subject = require('../models/Subject');
 const Assignment = require('../models/Assignment'); // ✅ ADD THIS LINE
@@ -14,6 +15,9 @@ const ScheduledSubject = require('../models/scheduledSubject'); //Neww
 const schedule = require('node-schedule');//forTest
 const Announcement = require('../models/Announcement');
 const { DateTime } = require('luxon');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 
 // ... other imports
 
@@ -206,16 +210,23 @@ exports.teacherLogin = async (req, res) => {
 
 
 
-const multer = require('multer');          // Namrata My addition for notes uploading
-const Note = require('../models/Note');
+// ==============================
+// MULTER SETUP: Store notes locally (uploads/notes)
+// ==============================
+const notesStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const uploadPath = path.join(process.cwd(), 'uploads', 'notes');
+    fs.mkdirSync(uploadPath, { recursive: true }); // create folder if doesn't exist
+    cb(null, uploadPath);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + file.originalname.replace(/\s+/g, '_');
+    cb(null, uniqueSuffix);
+  }
+});
 
-
-//  NOTES UPLOAD FEATURE (Teacher -> Admin Approval) Namrata
-// ===============================================================
-
-// Multer setup for in-memory file uploads (≤10MB)
 const upload = multer({
-  storage: multer.memoryStorage(),
+  storage: notesStorage,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
   fileFilter: (req, file, cb) => {
     const allowed = [
@@ -232,6 +243,9 @@ const upload = multer({
 
 exports.uploadMiddleware = upload.single('file');
 
+// ==============================
+// UPLOAD NOTE CONTROLLER
+// ==============================
 exports.uploadNote = async (req, res) => {
   try {
     const { title, description, subjectName, className } = req.body;
@@ -245,15 +259,14 @@ exports.uploadNote = async (req, res) => {
       return res.status(400).json({ message: 'File is required' });
     }
 
-    // ✅ FIX: Trim and validate class name
+    // Trim and validate class name
     const cleanClassName = className.toString().trim();
-    
     const classData = await Class.findOne({ className: cleanClassName });
     if (!classData) {
       return res.status(400).json({ message: `Class "${cleanClassName}" not found` });
     }
 
-    // ✅ FIX: Better subject search
+    // Better subject search
     const subject = await Subject.findOne({
       subjectName: { $regex: new RegExp(`^${subjectName}$`, 'i') },
       class: classData._id
@@ -265,18 +278,18 @@ exports.uploadNote = async (req, res) => {
       });
     }
 
-    // Rest of your code remains same...
+    // Save note in MongoDB (store file path instead of binary data)
     const note = new Note({
       title,
       description,
       subject: subject._id,
       class: classData._id,
       uploadedBy: teacherId,
-      fileName: req.file.originalname,
-      fileData: req.file.buffer,
+      fileName: req.file.filename,
+      filePath: req.file.path,          // store local file path
       fileMimeType: req.file.mimetype,
       fileSize: req.file.size,
-      status: 'pending'
+      status: 'pending'                 // Admin approval required
     });
 
     await note.save();
@@ -295,6 +308,56 @@ exports.uploadNote = async (req, res) => {
   } catch (error) {
     console.error('Upload Note Error:', error);
     return res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// ==============================
+// DOWNLOAD NOTE CONTROLLER
+// ==============================
+exports.downloadNote = async (req, res) => {
+  try {
+    const note = await Note.findById(req.params.id);
+    if (!note || note.status !== 'approved') {
+      return res.status(404).json({ message: 'Note not found or not approved' });
+    }
+
+    res.download(note.filePath, note.fileName);
+  } catch (error) {
+    console.error('Download Note Error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// ==============================
+// GET APPROVED NOTES (for eLibrary dashboard)
+// ==============================
+exports.getApprovedNotes = async (req, res) => {
+  try {
+    const { className, subjectName } = req.query;
+
+    if (!className || !subjectName) {
+      return res.status(400).json({ message: 'className and subjectName are required' });
+    }
+
+    const classData = await Class.findOne({ className: className.trim() });
+    if (!classData) return res.status(400).json({ message: 'Class not found' });
+
+    const subject = await Subject.findOne({
+      subjectName: { $regex: new RegExp(`^${subjectName}$`, 'i') },
+      class: classData._id
+    });
+    if (!subject) return res.status(400).json({ message: 'Subject not found' });
+
+    const notes = await Note.find({
+      class: classData._id,
+      subject: subject._id,
+      status: 'approved'
+    }).select('title description fileName');
+
+    return res.json({ notes });
+  } catch (error) {
+    console.error('Get Approved Notes Error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
 // Helper function to get available subjects for a class

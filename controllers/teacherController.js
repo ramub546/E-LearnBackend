@@ -18,6 +18,7 @@ const { DateTime } = require('luxon');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const LessonPlanner = require('../models/LessonPlanner');
 
 // ... other imports
 
@@ -1806,5 +1807,126 @@ exports.getTotalTestsByTeacherForSubject = async (req, res) => {
       message: 'Server error while fetching total tests.',
       error: error.message
     });
+  }
+};
+
+// ---------------- Add Lesson lessonplanner----------------
+exports.addLesson = async (req, res) => {
+  try {
+    const { subjectId, title, date, startTime, endTime } = req.body;
+    const teacherId = req.user.id;
+
+    if (!subjectId || !title || !date || !startTime || !endTime) {
+      return res.status(400).json({ message: 'All fields are required' });
+    }
+
+    // Convert date from dd-mm-yyyy to yyyy-mm-dd for JS Date
+    const [day, month, year] = date.split('-').map(Number);
+    const lessonDate = new Date(year, month - 1, day);
+
+    const lesson = new LessonPlanner({
+      teacher: teacherId,
+      subject: subjectId,
+      date: lessonDate,
+      title,
+      startTime,
+      endTime
+    });
+
+    await lesson.save();
+    return res.status(201).json({ message: 'Lesson added successfully', lesson });
+  } catch (error) {
+    console.error('Add Lesson Error:', error);
+    return res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// ---------------- Get Lessons for a Teacher ----------------
+exports.getMyLessons = async (req, res) => {
+  try {
+    const teacherId = req.user.id;
+    const lessons = await LessonPlanner.find({ teacher: teacherId })
+      .populate('subject', 'subjectName')
+      .sort({ date: 1, startTime: 1 });
+
+    return res.json({ lessons });
+  } catch (error) {
+    console.error('Get Lessons Error:', error);
+    return res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// ---------------- Get Next Lesson ----------------
+exports.getNextLesson = async (req, res) => {
+  try {
+    const teacherId = req.user.id;
+    const now = new Date();
+
+    // Find next lesson today or later
+    const nextLesson = await LessonPlanner.findOne({
+      teacher: teacherId,
+      date: { $gte: now }
+    })
+      .populate('subject', 'subjectName')
+      .sort({ date: 1, startTime: 1 });
+
+    if (!nextLesson) return res.json({ message: 'No upcoming lessons' });
+
+    return res.json({ nextLesson });
+  } catch (error) {
+    console.error('Get Next Lesson Error:', error);
+    return res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// ---------------- Get Subjects for Teacher (Dropdown) ----------------
+exports.getSubjectsByTeacher = async (req, res) => {
+  try {
+    const teacherId = req.user.id;
+    const subjects = await Subject.find({ teacher: teacherId }).select('subjectName');
+    return res.json({ subjects });
+  } catch (error) {
+    console.error('Get Subjects Error:', error);
+    return res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// ---------------------- Get Next Lesson for Subject ----------------------
+exports.getNextLessonForSubject = async (req, res) => {
+  try {
+    const { subjectId } = req.params;
+    const teacherId = req.user.id;
+
+    if (!subjectId) return res.status(400).json({ message: 'Subject ID is required' });
+
+    const now = new Date();
+
+    // Find next lesson for this subject for this teacher, sorted by date & startTime
+    const nextLesson = await LessonPlanner.findOne({
+      teacher: teacherId,
+      subject: subjectId,
+      date: { $gte: now.toISOString().split('T')[0] } // filter today or later
+    })
+      .sort({ date: 1, startTime: 1 })
+      .populate('subject', 'subjectName');
+
+    if (!nextLesson) return res.status(404).json({ message: 'No upcoming lessons found' });
+
+    return res.json({ nextLesson });
+  } catch (error) {
+    console.error('Get Next Lesson Error:', error);
+    return res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// ---------------------- Get All Lessons for Teacher ----------------------
+exports.getMyLessons = async (req, res) => {
+  try {
+    const teacherId = req.user.id;
+    const lessons = await LessonPlanner.find({ teacher: teacherId }).populate('subject', 'subjectName').sort({ date: 1, startTime: 1 });
+    return res.json({ lessons });
+  } catch (error) {
+    console.error('Get My Lessons Error:', error);
+    return res.status(500).json({ message: 'Server error', error: error.message });
   }
 };

@@ -5,7 +5,7 @@ const multer = require('multer');
 const TeacherAnnouncement = require('../models/TeacherAnnouncement');
 const teacherController = require('../controllers/teacherController');
 const { uploadAssignmentMiddleware, uploadAssignment, getMyAssignments, downloadAssignment } = require('../controllers/teacherController');
-const {  getClassMarks, getStudentMarks,getMyUploadedMarks, uploadMiddleware  } = require('../controllers/teacherController');
+const {  getClassMarks, getStudentMarks,getMyUploadedMarks, uploadMiddleware, lessonPlannerController, getNextLessonForSubject  } = require('../controllers/teacherController');
 const {
   uploadNote,
   getMyNotes,
@@ -91,3 +91,15 @@ router.post('/create-announcement', protect, teacherController.createAnnouncemen
 router.get('/my-announcements', protect, teacherController.getMyAnnouncements);
 router.put('/update-announcement/:id', protect, teacherController.updateAnnouncement);
 router.delete('/delete-announcement/:id', protect, teacherController.deleteAnnouncement);
+
+// Add a lesson
+router.post('/add', protect, teacherController.addLesson);
+// Get all lessons for the logged-in teacher
+router.get('/my-lessons', protect, teacherController.getMyLessons);
+// Get next lesson for a subject
+router.get('/next-lesson/:subjectId', protect, teacherController.getNextLessonForSubject);
+// Get next lesson for logged-in teacher
+router.get('/next-lesson', protect, teacherController.getNextLesson);
+// Get subjects handled by teacher (for dropdown)
+router.get('/my-subjects', protect, teacherController.getSubjectsByTeacher);
+

@@ -5,33 +5,27 @@ const {
   approveNote,
   rejectNote,
 } = require('../controllers/adminController');
-const { protect } = require('../middleware/authMiddleware'); // JWT auth middleware
+const { protect, authorize } = require('../middleware/authMiddleware'); // JWT auth middleware
 const adminController = require('../controllers/adminController'); //Neww
 
-// ✅ Only admin middleware
-const adminOnly = (req, res, next) => {
-  if (req.user?.role !== 'admin') {
-    return res.status(403).json({ message: 'Access denied: Admins only' });
-  }
-  next();
-};
+// Admin authorization is handled by `authorize('admin')` middleware from authMiddleware
 
 // ✅ Routes for notes approval
-router.get('/notes/pending', protect, adminOnly, getPendingNotes);
-router.patch('/notes/:id/approve', protect, adminOnly, approveNote);
-router.patch('/notes/:id/reject', protect, adminOnly, rejectNote);
+router.get('/notes/pending', protect, authorize('admin'), getPendingNotes);
+router.patch('/notes/:id/approve', protect, authorize('admin'), approveNote);
+router.patch('/notes/:id/reject', protect, authorize('admin'), rejectNote);
 
 //Neww
 router.get(
   '/subjects/pending',
   protect,
-  adminOnly,
+  authorize('admin'),
   adminController.getPendingScheduledSubjects
 );
 router.post(
   '/subjects/approve',
   protect,
-  adminOnly,
+  authorize('admin'),
   adminController.approveScheduledSubject
 );
 
@@ -39,25 +33,28 @@ router.post(
 router.get(
   '/pending-announcements',
   protect,
+  authorize('admin'),
   adminController.getPendingAnnouncements
 );
 router.put(
   '/approve-announcement/:id',
   protect,
+  authorize('admin'),
   adminController.approveAnnouncement
 );
 router.put(
   '/reject-announcement/:id',
   protect,
+  authorize('admin'),
   adminController.rejectAnnouncement
 );
-router.get('/all-announcements', protect, adminController.getAllAnnouncements);
+router.get('/all-announcements', protect, authorize('admin'), adminController.getAllAnnouncements);
 
 // -----------------SHUBHAM-------------
 router.get(
   '/results/summary',
   protect,
-  adminOnly,
+  authorize('admin'),
   adminController.getSubjectResultsSummary
 );
 
@@ -66,28 +63,32 @@ router.get(
 router.get(
   '/attendance/summary',
   protect,
-  adminOnly,
+  authorize('admin'),
   adminController.getAttendanceSummary
 );
 
 // DELETE /api/admin/users/:id
-router.delete('/users/:id', protect, adminOnly, adminController.deleteUserById);
+router.delete('/users/:id', protect, authorize('admin'), adminController.deleteUserById);
 
 // Add these routes for admin announcement management
+// (Routes above already registered)
+
+router.get('/students/count', protect, authorize('admin'), adminController.getTotalStudentsCount);
+
+// GET /api/admin/students/pending - list pending student registration requests
+router.get('/students/pending', protect, authorize('admin'), adminController.getPendingStudents);
+// Approve a student registration request
+router.post('/students/:id/approve', protect, authorize('admin'), adminController.approveStudent);
+// Reject a student registration request
+router.post('/students/:id/reject', protect, authorize('admin'), adminController.rejectStudent);
+
+// Get total parents & teachers count
 router.get(
-  '/pending-announcements',
+  '/user-counts',
   protect,
-  adminController.getPendingAnnouncements
+  authorize('admin'),
+  adminController.getUserCounts
 );
-router.put(
-  '/approve-announcement/:id',
-  protect,
-  adminController.approveAnnouncement
-);
-router.put(
-  '/reject-announcement/:id',
-  protect,
-  adminController.rejectAnnouncement
-);
+
 
 module.exports = router;

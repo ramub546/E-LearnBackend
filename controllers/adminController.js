@@ -1,5 +1,7 @@
 const User = require('../models/User');
 const { sendCustomEmail } = require('../utils/mailer');
+const { generateRoleNumber } = require('../utils/roleNumber');
+const bcrypt = require('bcryptjs');
 const ScheduledSubject = require('../models/scheduledSubject');
 
 const TestResult = require('../models/TestResult');
@@ -226,6 +228,221 @@ exports.getAllStudents = async (req, res) => {
     return res
       .status(500)
       .json({ message: 'Server error', error: err.message });
+  }
+};
+
+// ---------------------- GET PENDING STUDENT REQUESTS ----------------------
+// Returns students with studentStatus === 'pending'. Excludes sensitive fields
+// like passwordHash and otp, and returns full student, parentDetails and address info.
+exports.getPendingStudents = async (req, res) => {
+  try {
+    const pendingStudents = await User.find({
+      role: 'student',
+      studentStatus: 'pending',
+    })
+      .select('-passwordHash -otp')
+      .sort({ createdAt: -1 });
+
+    return res.json({
+      message: 'Pending student requests retrieved successfully',
+      count: pendingStudents.length,
+      students: pendingStudents,
+    });
+  } catch (err) {
+    console.error('Get Pending Students Error:', err);
+    return res
+      .status(500)
+      .json({ message: 'Server error', error: err.message });
+  }
+};
+
+// ---------------------- APPROVE STUDENT REQUEST ----------------------
+// POST /api/admin/students/:id/approve
+// Admin approves a pending student registration request.
+// Actions:
+// - Set studentStatus = 'approved', isEmailVerified = true, approvedAt, approvedBy
+// - Generate student roleNumber if missing
+// - Create or update parent account with a temporary password (8 chars)
+// - Send emails to student (admission approved) and parent (credentials)
+exports.approveStudent = async (req, res) => {
+  try {
+    const studentId = req.params.id;
+    const adminId = req.user.id;
+
+    const student = await User.findById(studentId);
+    if (!student || student.role !== 'student') {
+      return res.status(404).json({ message: 'Student not found' });
+    }
+
+    // Update student fields
+    student.studentStatus = 'approved';
+    student.isEmailVerified = true;
+    student.approvedAt = new Date();
+    student.approvedBy = adminId;
+
+    // Generate roleNumber if missing
+    if (!student.roleNumber) {
+      const region = student.academicRegion || 'NO';
+      let roleNumber = await generateRoleNumber(region);
+      // ensure uniqueness at application level
+      const existing = await User.findOne({ roleNumber });
+      if (existing) {
+        roleNumber = await generateRoleNumber(region);
+      }
+      student.roleNumber = roleNumber;
+    }
+
+    // Set student's initial password to their roleNumber so they can login immediately.
+    // This will be their first password; they can change it later via reset/password change flow.
+    try {
+      const saltStudent = await bcrypt.genSalt(10);
+      const studentPasswordHash = await bcrypt.hash(student.roleNumber, saltStudent);
+      student.passwordHash = studentPasswordHash;
+    } catch (hashErr) {
+      console.error('Error hashing student initial password:', hashErr);
+    }
+
+    await student.save();
+
+    // Handle parent account creation/updating
+    const parentInfo = student.parentDetails || null;
+    let tempParentPassword = null;
+    if (parentInfo && parentInfo.email) {
+      const parentEmail = parentInfo.email.toLowerCase();
+      let parentUser = await User.findOne({ email: parentEmail, role: 'parent' });
+
+      // Generate initial password for parent (8 chars alphanumeric).
+      // This will be treated as the parent's initial/permanent password (they may change it later).
+      tempParentPassword = Math.random().toString(36).slice(-8);
+      const salt = await bcrypt.genSalt(10);
+      const parentPasswordHash = await bcrypt.hash(tempParentPassword, salt);
+
+      if (parentUser) {
+        // Ensure linkedStudents contains this student
+        const alreadyLinked = parentUser.linkedStudents.some(
+          (ls) => ls.studentId && student.roleNumber && ls.studentId.toUpperCase() === student.roleNumber.toUpperCase()
+        );
+        if (!alreadyLinked) {
+          parentUser.linkedStudents.push({ studentId: student.roleNumber, relationship: parentInfo.relationship || 'Parent' });
+        }
+        // Update passwordHash with the generated initial password so parent can login
+        parentUser.passwordHash = parentPasswordHash;
+        parentUser.isEmailVerified = true; // admin-created parent is considered verified
+        await parentUser.save();
+      } else {
+        // Create new parent user
+        const parentPhone = parentInfo.phone || student.phone || '';
+        const newParent = new User({
+          fullName: parentInfo.name || 'Parent',
+          email: parentEmail,
+          phone: parentPhone,
+          passwordHash: parentPasswordHash,
+          role: 'parent',
+          linkedStudents: [{ studentId: student.roleNumber, relationship: parentInfo.relationship || 'Parent' }],
+          isEmailVerified: true,
+        });
+
+        await newParent.save();
+        parentUser = newParent;
+      }
+
+      // Send parent email with credentials
+      try {
+        const parentEmailHtml = `
+          <h2>Parent Account Created</h2>
+          <p>Dear ${parentInfo.name || 'Parent'},</p>
+          <p>An account has been created for you to access the student information.</p>
+          <p><strong>Login details:</strong></p>
+          <ul>
+            <li>Email: ${parentEmail}</li>
+            <li>Temporary Password: ${tempParentPassword}</li>
+          </ul>
+          <p>Please login and change your password immediately.</p>
+        `;
+        await sendCustomEmail(parentEmail, 'Parent Account Created - Credentials', parentEmailHtml);
+      } catch (emailErr) {
+        console.error('Error sending parent email:', emailErr);
+      }
+    }
+
+    // Send student email notifying approval
+    try {
+      const studentEmailHtml = `
+        <h2>Admission Approved</h2>
+        <p>Dear ${student.fullName},</p>
+        <p>Your admission request has been approved.</p>
+        <p><strong>Student ID (Role Number):</strong> ${student.roleNumber}</p>
+        <p>You can now login once your account has a password set by admin or via the password setup flow.</p>
+      `;
+      if (student.email) await sendCustomEmail(student.email, 'Admission Approved', studentEmailHtml);
+    } catch (emailErr) {
+      console.error('Error sending student email:', emailErr);
+    }
+
+    return res.json({ message: 'Student approved successfully' });
+  } catch (err) {
+    console.error('Approve Student Error:', err);
+    return res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
+
+// ---------------------- REJECT STUDENT REQUEST ----------------------
+// POST /api/admin/students/:id/reject
+// Sets studentStatus = 'rejected', saves rejectionReason, and emails student and parent.
+exports.rejectStudent = async (req, res) => {
+  try {
+    const studentId = req.params.id;
+    const { rejectionReason } = req.body;
+
+    if (!rejectionReason) {
+      return res.status(400).json({ message: 'rejectionReason is required' });
+    }
+
+    const student = await User.findById(studentId);
+    if (!student || student.role !== 'student') {
+      return res.status(404).json({ message: 'Student not found' });
+    }
+
+    student.studentStatus = 'rejected';
+    student.rejectionReason = rejectionReason;
+    await student.save();
+
+    // Send rejection email to student
+    try {
+      if (student.email) {
+        const studentEmailHtml = `
+          <h2>Registration Request Update</h2>
+          <p>Dear ${student.fullName},</p>
+          <p>We regret to inform you that your registration request has been rejected.</p>
+          <p><strong>Reason:</strong> ${rejectionReason}</p>
+        `;
+        await sendCustomEmail(student.email, 'Registration Request Rejected', studentEmailHtml);
+      }
+    } catch (emailErr) {
+      console.error('Error sending student rejection email:', emailErr);
+    }
+
+    // Send rejection email to parent if available
+    try {
+      const parentInfo = student.parentDetails || null;
+      if (parentInfo && parentInfo.email) {
+        const parentEmail = parentInfo.email.toLowerCase();
+        const parentEmailHtml = `
+          <h2>Registration Request Update</h2>
+          <p>Dear ${parentInfo.name || 'Parent'},</p>
+          <p>The registration request for ${student.fullName} has been rejected.</p>
+          <p><strong>Reason:</strong> ${rejectionReason}</p>
+        `;
+        await sendCustomEmail(parentEmail, 'Student Registration Rejected', parentEmailHtml);
+      }
+    } catch (emailErr) {
+      console.error('Error sending parent rejection email:', emailErr);
+    }
+
+    return res.json({ message: 'Student rejected successfully' });
+  } catch (err) {
+    console.error('Reject Student Error:', err);
+    return res.status(500).json({ message: 'Server error', error: err.message });
   }
 };
 
@@ -918,5 +1135,43 @@ exports.deleteUserById = async (req, res) => {
     return res
       .status(500)
       .json({ message: 'Server error', error: err.message });
+  }
+};
+
+
+// controllers/adminController.js or studentController.js
+
+exports.getTotalStudentsCount = async (req, res) => {
+  try {
+    const totalStudents = await User.countDocuments({ role: 'student' });
+
+    res.status(200).json({
+      totalStudents
+    });
+  } catch (error) {
+    console.error('Get Total Students Error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+
+// ==============================
+// GET TOTAL TEACHERS & PARENTS COUNT
+// ==============================
+exports.getUserCounts = async (req, res) => {
+  try {
+    const totalTeachers = await User.countDocuments({ role: 'teacher' });
+    const totalParents = await User.countDocuments({ role: 'parent' });
+
+    return res.status(200).json({
+      totalTeachers,
+      totalParents
+    });
+  } catch (error) {
+    console.error('Get User Counts Error:', error);
+    res.status(500).json({
+      message: 'Server error',
+      error: error.message
+    });
   }
 };

@@ -10,6 +10,10 @@ const { generateRoleNumber } = require('../utils/roleNumber');
 
 const OTP_TTL_MINUTES = parseInt(process.env.OTP_TTL_MINUTES || '15');
 
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
 // ---------------------- REGISTER ----------------------
 exports.register = async (req, res) => {
   try {
@@ -143,6 +147,129 @@ exports.register = async (req, res) => {
       .json({ message: 'Server error', error: err.message });
   }
 };
+
+// ---------------------- STUDENT REGISTRATION REQUEST ----------------------
+// Creates a student request WITHOUT password or OTP. The record is created
+// with role: 'student', studentStatus: 'pending', isEmailVerified: false,
+// and registrationSource set from req.body.registeredBy.
+// Files: profilePicture, governmentProof (multipart/form-data)
+exports.studentRequest = async (req, res) => {
+  try {
+    // Note: multipart/form-data fields arrive as strings
+    const {
+      fullName,
+      dob,
+      email,
+      phone,
+      academicRegion,
+      class: className,
+      parentDetails: parentDetailsRaw,
+      address: addressRaw,
+      academicYear,
+      howDidYouFindUs,
+      registeredBy,
+    } = req.body;
+
+    // Basic required checks: at minimum fullName and class must be provided
+    if (!fullName || !className) {
+      return res.status(400).json({ message: 'fullName and class are required' });
+    }
+
+    // Validate registeredBy
+    const allowedSources = ['student', 'parent', 'admin'];
+    const registrationSource = allowedSources.includes(registeredBy)
+      ? registeredBy
+      : 'student';
+
+    // Validate class exists (reuse Class model lookup from existing register())
+    const classExists = await Class.findOne({ className: className });
+    if (!classExists) {
+      return res.status(400).json({ message: 'Invalid class selected' });
+    }
+
+    // If class is numeric 1-5 require parentDetails. We allow className like '1' or 'Grade 1'.
+    let classNumber = null;
+    const numMatch = (classExists.className || '').match(/\d+/);
+    if (numMatch) classNumber = parseInt(numMatch[0], 10);
+
+    let parentDetails = undefined;
+    if (parentDetailsRaw) {
+      // parentDetails may be sent as JSON string in multipart forms
+      try {
+        parentDetails =
+          typeof parentDetailsRaw === 'string'
+            ? JSON.parse(parentDetailsRaw)
+            : parentDetailsRaw;
+      } catch (e) {
+        // ignore parse error; use raw
+        parentDetails = parentDetailsRaw;
+      }
+    }
+
+    if (classNumber !== null && classNumber >= 1 && classNumber <= 5) {
+      if (!parentDetails || !parentDetails.name || !parentDetails.relationship) {
+        return res.status(400).json({ message: 'parentDetails required for classes 1-5' });
+      }
+    }
+
+    // Files handled by multer in route; pick file paths if present
+    let profilePicturePath = undefined;
+    let governmentProofPath = undefined;
+    if (req.files) {
+      if (req.files.profilePicture && req.files.profilePicture.length > 0) {
+        profilePicturePath = path.join('/uploads', 'students', req.files.profilePicture[0].filename).replace(/\\/g, '/');
+      }
+      if (req.files.governmentProof && req.files.governmentProof.length > 0) {
+        governmentProofPath = path.join('/uploads', 'students', req.files.governmentProof[0].filename).replace(/\\/g, '/');
+      }
+    }
+
+    // Since passwordHash is required by schema, create a random placeholder hash
+    // This ensures the document can be saved but the user cannot login until
+    // admin approves and sets a real password (or a separate flow is used).
+    const randomToken = Math.random().toString(36).slice(2);
+    const salt = await bcrypt.genSalt(10);
+    const passwordHash = await bcrypt.hash(randomToken, salt);
+
+    // Parse address if provided as JSON string
+    let address = undefined;
+    if (addressRaw) {
+      try {
+        address = typeof addressRaw === 'string' ? JSON.parse(addressRaw) : addressRaw;
+      } catch (e) {
+        address = addressRaw;
+      }
+    }
+
+    // Create the student request user document
+    const studentReq = new User({
+      fullName,
+      dob: dob ? new Date(dob) : undefined,
+      email: email ? email.toLowerCase() : undefined,
+      phone,
+      academicRegion,
+      class: classExists._id,
+      passwordHash,
+      role: 'student',
+      studentStatus: 'pending',
+      isEmailVerified: false,
+      registrationSource,
+      profilePicture: profilePicturePath,
+      governmentProof: governmentProofPath,
+      parentDetails: parentDetails,
+      address: address,
+      academicYear,
+      howDidYouFindUs,
+    });
+
+    await studentReq.save();
+
+    return res.status(201).json({ message: 'Registration request submitted successfully' });
+  } catch (err) {
+    console.error('Student Request Error:', err);
+    return res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
 // ---------------------- VERIFY OTP ----------------------
 exports.verifyOtp = async (req, res) => {
   try {
@@ -204,6 +331,13 @@ exports.login = async (req, res) => {
       return res
         .status(403)
         .json({ message: 'Please use the correct login portal for your role' });
+    }
+
+    // If student registration is not approved by admin, block login
+    if (user.role === 'student' && user.studentStatus !== 'approved') {
+      return res.status(403).json({
+        message: 'Your admission request is pending admin approval',
+      });
     }
 
     if (!user.isEmailVerified) {

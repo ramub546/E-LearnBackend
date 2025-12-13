@@ -10,11 +10,18 @@ const forgetPasswordController = require('../controllers/forgetPasswordControlle
 const announcementController = require('../controllers/announcementController');
 const classController = require('../controllers/classController');
 const logoutController = require('../controllers/logoutController');
+const uploadStudentFiles = require('../middleware/uploadStudentFiles');
 
 
 
 // ✅ STUDENT ROUTES
 router.post('/student-register', authController.register);
+// Student registration request (no password, no OTP). Accepts multipart/form-data
+// Student registration request (no password, no OTP). Accepts multipart/form-data
+router.post('/student-request', uploadStudentFiles.fields([
+  { name: 'profilePicture', maxCount: 1 },
+  { name: 'governmentProof', maxCount: 1 }
+]), authController.studentRequest);
 router.post('/verify-otp', authController.verifyOtp);
 router.post('/student-login', authController.login);
 router.get('/student-profile', protect, authController.getProfile);

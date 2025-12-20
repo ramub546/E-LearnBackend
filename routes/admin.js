@@ -85,5 +85,12 @@ router.post('/students/:id/reject', protect, authorize('admin'), adminController
 // Get total parents & teachers count
 router.get('/user-counts',protect,authorize('admin'),adminController.getUserCounts );
 
+//ADMIN SEND ANNOUNCEMENT
+router.post(
+  '/send-announcement',
+  protect,authorize('admin'), 
+  adminController.sendAnnouncementToGroups
+);
+
 
 module.exports = router;

@@ -3,7 +3,7 @@ const { sendCustomEmail } = require('../utils/mailer');
 const { generateRoleNumber } = require('../utils/roleNumber');
 const bcrypt = require('bcryptjs');
 const ScheduledSubject = require('../models/scheduledSubject');
-
+const Announcement = require('../models/Announcement');
 const TestResult = require('../models/TestResult');
 const Test = require('../models/Test'); // Assuming Test.js is in models
 const Subject = require('../models/Subject');
@@ -1173,5 +1173,49 @@ exports.getUserCounts = async (req, res) => {
       message: 'Server error',
       error: error.message
     });
+  }
+};
+
+
+
+
+// ---------------------- ADMIN SEND ANNOUNCEMENT ----------------------
+exports.sendAnnouncementToGroups = async (req, res) => {
+  try {
+    const { title, message, recipients } = req.body;
+    const adminId = req.user.id;
+
+    if (!title || !message) {
+      return res.status(400).json({ message: 'Title and message are required' });
+    }
+
+    if (!recipients || !Array.isArray(recipients) || recipients.length === 0) {
+      return res.status(400).json({ message: 'At least one recipient group is required' });
+    }
+
+    // If 'all' is selected, ignore other roles
+    const finalRecipients = recipients.includes('all') ? ['all'] : recipients;
+
+    const announcements = [];
+
+    for (const role of finalRecipients) {
+      const announcement = new Announcement({
+        title,
+        message,
+        targetAudience: role,
+        createdBy: adminId
+      });
+      await announcement.save();
+      announcements.push(announcement);
+    }
+
+    return res.status(201).json({
+      message: 'Announcements sent successfully',
+      count: announcements.length,
+      announcements
+    });
+  } catch (err) {
+    console.error('Admin Send Announcement Error:', err);
+    return res.status(500).json({ message: 'Server error', error: err.message });
   }
 };

@@ -1161,7 +1161,7 @@ exports.getTotalStudentsCount = async (req, res) => {
 exports.getUserCounts = async (req, res) => {
   try {
     const totalTeachers = await User.countDocuments({ role: 'teacher' });
-    const totalParents = await User.countDocuments({ role: 'parent' });
+    const totalParents = await User.countDocuments({ role: 'parent' , teacherStatus: 'approved'});
 
     return res.status(200).json({
       totalTeachers,

@@ -83,12 +83,7 @@ router.post('/students/:id/approve', protect, authorize('admin'), adminControlle
 router.post('/students/:id/reject', protect, authorize('admin'), adminController.rejectStudent);
 
 // Get total parents & teachers count
-router.get(
-  '/user-counts',
-  protect,
-  authorize('admin'),
-  adminController.getUserCounts
-);
+router.get('/user-counts',protect,authorize('admin'),adminController.getUserCounts );
 
 
 module.exports = router;

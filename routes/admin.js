@@ -92,5 +92,11 @@ router.post(
   adminController.sendAnnouncementToGroups
 );
 
+// ---------------------- SUBJECT DETAILS ROUTE ----------------------
+router.get(
+  '/assigned-subjects',
+  protect,authorize('admin'),
+  adminController.getAssignedSubjectDetails
+);
 
 module.exports = router;

@@ -11,6 +11,7 @@ const Class = require('../models/Class');
 const Attendance = require('../models/Attendance'); // Make sure path is correct
 // const User = require('../models/User');
 const mongoose = require('mongoose'); // Need this for ID validation
+const LessonPlanner = require('../models/LessonPlanner');
 
 // ---------------------- GET PENDING TEACHERS ----------------------
 exports.getPendingTeachers = async (req, res) => {
@@ -1216,6 +1217,58 @@ exports.sendAnnouncementToGroups = async (req, res) => {
     });
   } catch (err) {
     console.error('Admin Send Announcement Error:', err);
+    return res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
+
+
+
+
+// ---------------------- ADMIN FETCH ASSIGNED SUBJECT DETAILS ----------------------
+exports.getAssignedSubjectDetails = async (req, res) => {
+  try {
+    // 1. Fetch only approved scheduled subjects
+    const scheduledSubjects = await ScheduledSubject.find({ status: 'approved' })
+      .populate('class', 'className classCode')
+      .populate('subject', 'subjectName subjectCode description')
+      .populate('teacher', 'fullName');
+
+    const result = [];
+
+    for (const scheduled of scheduledSubjects) {
+      if (!scheduled.teacher || !scheduled.subject || !scheduled.class) {
+        continue; // skip incomplete records
+      }
+
+      // 2. Fetch notes for this teacher + subject + class (only approved notes)
+      const notes = await Note.find({
+        uploadedBy: scheduled.teacher._id,
+        subject: scheduled.subject._id,
+        class: scheduled.class._id,
+        status: 'approved'
+      }).select('title');
+
+      // 3. Use subject description as syllabus
+      const syllabus = scheduled.subject.description || "";
+
+      // 4. Push enriched object
+      result.push({
+        class: `Class ${scheduled.class.className}`,
+        subject: scheduled.subject.subjectName,
+        subjectCode: scheduled.subject.subjectCode,
+        teacher: scheduled.teacher.fullName,
+        syllabus, // now a string from subject.description
+        notes: notes.map(n => n.title)
+      });
+    }
+
+    return res.json({
+      message: 'Approved assigned subject details fetched successfully',
+      count: result.length,
+      subjects: result
+    });
+  } catch (err) {
+    console.error('Get Assigned Subject Details Error:', err);
     return res.status(500).json({ message: 'Server error', error: err.message });
   }
 };

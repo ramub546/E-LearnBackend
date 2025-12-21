@@ -9,20 +9,38 @@ const authRoutes = require('./routes/auth');
 const teacherRoutes = require('./routes/teacher');
 const parentRoutes = require('./routes/parent.js');
 const cors = require('cors');
-
 const { startScheduledJobs } = require('./config/scheduler.js');
 
-// CORS setup
 const app = express();
+
+// ✅ Allow multiple frontend origins
+const allowedOrigins = [
+  'http://localhost:3000', // login
+  'http://localhost:5175', // teacher
+  'http://localhost:5176', // parent
+  'http://localhost:5174',//Admin
+  'http://localhost:5173' // student
+];
+
 app.use(
   cors({
-    origin: 'http://localhost:3000', // frontend port
-    credentials: true,
+    origin: function (origin, callback) {
+      // allow requests with no origin (Postman, mobile apps)
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
+    credentials: true
   })
 );
 
 // Middleware
 app.use(bodyParser.json()); // or app.use(express.json());
+
 
 // Routes
 

@@ -4,7 +4,7 @@ const router = express.Router();
 const multer = require('multer');
 const TeacherAnnouncement = require('../models/TeacherAnnouncement');
 const teacherController = require('../controllers/teacherController');
-const { uploadAssignmentMiddleware, uploadAssignment, getMyAssignments, downloadAssignment } = require('../controllers/teacherController');
+const { uploadAssignmentMiddleware, uploadAssignment, getMyAssignments, downloadAssignment, viewNote } = require('../controllers/teacherController');
 const {  getClassMarks, getStudentMarks,getMyUploadedMarks, uploadMiddleware, lessonPlannerController, getNextLessonForSubject  } = require('../controllers/teacherController');
 const {
   uploadNote,
@@ -49,6 +49,9 @@ router.get('/my-notes', protect, teacherController.getMyNotes);
 router.get('/approved-notes', protect, teacherController.getApprovedNotes);
 router.get('/download/:id', protect, teacherController.downloadNote);
 router.get('/note-count-by-class-subject', protect, teacherController.getNotesCountByClassAndSubject);//count of notes
+// routes/noteRoutes.js
+router.get('/notes/view/:id', viewNote);
+
 
 // ✅ TEACHER MEETING ROUTES
 router.post('/schedule-meeting', protect, teacherController.scheduleMeeting);

@@ -330,6 +330,49 @@ exports.downloadNote = async (req, res) => {
 };
 
 // ==============================
+// VIEW NOTE (INLINE PREVIEW)
+// ==============================
+exports.viewNote = async (req, res) => {
+  try {
+    const note = await Note.findById(req.params.id);
+
+    if (!note) {
+      return res.status(404).json({ message: 'Note not found' });
+    }
+
+    // Access control
+    const user = req.user;
+    if (
+      note.status !== 'approved' &&
+      user.role !== 'teacher' &&
+      user.role !== 'admin'
+    ) {
+      return res.status(403).json({ message: 'Note not approved yet' });
+    }
+
+    // Check file exists
+    if (!fs.existsSync(note.filePath)) {
+      return res.status(404).json({ message: 'File missing on server' });
+    }
+
+    // Set headers for inline viewing
+    res.setHeader('Content-Type', note.fileMimeType);
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="${note.fileName}"`
+    );
+
+    // Stream file
+    const fileStream = fs.createReadStream(note.filePath);
+    fileStream.pipe(res);
+
+  } catch (error) {
+    console.error('View Note Error:', error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// ==============================
 // GET APPROVED NOTES (for eLibrary dashboard)
 // ==============================
 exports.getApprovedNotes = async (req, res) => {

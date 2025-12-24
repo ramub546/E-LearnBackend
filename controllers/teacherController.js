@@ -1529,101 +1529,147 @@ exports.getTeacherTests = async (req, res) => {
   }
 };
 
-const TeacherAnnouncement = require('../models/TeacherAnnouncement');
-// ---------------------- CREATE ANNOUNCEMENT ----------------------
+// const TeacherAnnouncement = require('../models/TeacherAnnouncement');
+// // ---------------------- CREATE ANNOUNCEMENT ----------------------
+// exports.createAnnouncement = async (req, res) => {
+//   try {
+//     const { 
+//       title, 
+//       description, 
+//       announcementType, 
+//       className, 
+//       subjectName,
+//       eventDate,
+//       eventLocation 
+//     } = req.body;
+
+//     const teacherId = req.user.id;
+
+//     // Validation
+//     if (!title || !description || !announcementType) {
+//       return res.status(400).json({ 
+//         message: 'Title, description, and announcement type are required' 
+//       });
+//     }
+
+//     if (announcementType === 'student' && (!className || !subjectName)) {
+//       return res.status(400).json({ 
+//         message: 'Class name and subject name are required for student announcements' 
+//       });
+//     }
+
+//     let classData = null;
+//     let subject = null;
+
+//     // For student announcements, validate class and subject
+//     if (announcementType === 'student') {
+//       // Find class
+//       const cleanClassName = className.toString().replace(/"/g, '').trim();
+//       classData = await Class.findOne({ className: cleanClassName });
+//       if (!classData) {
+//         return res.status(400).json({ message: `Class "${cleanClassName}" not found` });
+//       }
+
+//       // Find subject
+//       subject = await Subject.findOne({
+//         subjectName: { $regex: new RegExp(`^${subjectName}$`, 'i') },
+//         class: classData._id
+//       });
+
+//       if (!subject) {
+//         return res.status(400).json({ 
+//           message: `Subject "${subjectName}" not found for class ${cleanClassName}` 
+//         });
+//       }
+//     }
+
+//     // Create announcement
+//     const announcement = new TeacherAnnouncement({
+//       title,
+//       description,
+//       announcementType,
+//       class: classData ? classData._id : undefined,
+//       subject: subject ? subject._id : undefined,
+//       createdBy: teacherId,
+//       eventDate: eventDate ? new Date(eventDate) : undefined,
+//       eventLocation: eventLocation || undefined,
+//       // Events go to admin for approval, student announcements are auto-approved
+//       status: announcementType === 'student' ? 'approved' : 'pending'
+//     });
+
+//     await announcement.save();
+
+//     // Populate for response
+//     await announcement.populate('class', 'className');
+//     await announcement.populate('subject', 'subjectName');
+//     await announcement.populate('createdBy', 'fullName');
+
+//     return res.status(201).json({
+//       message: announcementType === 'student' 
+//         ? 'Announcement created successfully for students' 
+//         : 'Event announcement submitted for admin approval',
+//       announcement: {
+//         id: announcement._id,
+//         title: announcement.title,
+//         announcementType: announcement.announcementType,
+//         class: announcement.class ? announcement.class.className : null,
+//         subject: announcement.subject ? announcement.subject.subjectName : null,
+//         status: announcement.status,
+//         createdAt: announcement.createdAt
+//       }
+//     });
+
+//   } catch (error) {
+//     console.error('Create Announcement Error:', error);
+//     return res.status(500).json({ message: 'Server error', error: error.message });
+//   }
+// };
+
+
+
+// ---------------------- TEACHER CREATE ANNOUNCEMENT ----------------------
 exports.createAnnouncement = async (req, res) => {
   try {
-    const { 
-      title, 
-      description, 
-      announcementType, 
-      className, 
-      subjectName,
-      eventDate,
-      eventLocation 
-    } = req.body;
-
+    const { title, message, audience } = req.body; // audience comes from radio button
     const teacherId = req.user.id;
 
-    // Validation
-    if (!title || !description || !announcementType) {
-      return res.status(400).json({ 
-        message: 'Title, description, and announcement type are required' 
-      });
+    if (!title || !message) {
+      return res.status(400).json({ message: 'Title and message are required' });
     }
 
-    if (announcementType === 'student' && (!className || !subjectName)) {
-      return res.status(400).json({ 
-        message: 'Class name and subject name are required for student announcements' 
-      });
+    const announcements = [];
+
+    if (audience === 'Students Only') {
+      const ann = new Announcement({ title, message, targetAudience: 'student', createdBy: teacherId });
+      await ann.save();
+      announcements.push(ann);
+    } else if (audience === 'Parents Only') {
+      const ann = new Announcement({ title, message, targetAudience: 'parent', createdBy: teacherId });
+      await ann.save();
+      announcements.push(ann);
+    } else if (audience === 'Parents & Students') {
+      // create two announcements: one for student, one for parent
+      const annStudent = new Announcement({ title, message, targetAudience: 'student', createdBy: teacherId });
+      const annParent = new Announcement({ title, message, targetAudience: 'parent', createdBy: teacherId });
+      await annStudent.save();
+      await annParent.save();
+      announcements.push(annStudent, annParent);
+    } else {
+      return res.status(400).json({ message: 'Invalid audience selection' });
     }
-
-    let classData = null;
-    let subject = null;
-
-    // For student announcements, validate class and subject
-    if (announcementType === 'student') {
-      // Find class
-      const cleanClassName = className.toString().replace(/"/g, '').trim();
-      classData = await Class.findOne({ className: cleanClassName });
-      if (!classData) {
-        return res.status(400).json({ message: `Class "${cleanClassName}" not found` });
-      }
-
-      // Find subject
-      subject = await Subject.findOne({
-        subjectName: { $regex: new RegExp(`^${subjectName}$`, 'i') },
-        class: classData._id
-      });
-
-      if (!subject) {
-        return res.status(400).json({ 
-          message: `Subject "${subjectName}" not found for class ${cleanClassName}` 
-        });
-      }
-    }
-
-    // Create announcement
-    const announcement = new TeacherAnnouncement({
-      title,
-      description,
-      announcementType,
-      class: classData ? classData._id : undefined,
-      subject: subject ? subject._id : undefined,
-      createdBy: teacherId,
-      eventDate: eventDate ? new Date(eventDate) : undefined,
-      eventLocation: eventLocation || undefined,
-      // Events go to admin for approval, student announcements are auto-approved
-      status: announcementType === 'student' ? 'approved' : 'pending'
-    });
-
-    await announcement.save();
-
-    // Populate for response
-    await announcement.populate('class', 'className');
-    await announcement.populate('subject', 'subjectName');
-    await announcement.populate('createdBy', 'fullName');
 
     return res.status(201).json({
-      message: announcementType === 'student' 
-        ? 'Announcement created successfully for students' 
-        : 'Event announcement submitted for admin approval',
-      announcement: {
-        id: announcement._id,
-        title: announcement.title,
-        announcementType: announcement.announcementType,
-        class: announcement.class ? announcement.class.className : null,
-        subject: announcement.subject ? announcement.subject.subjectName : null,
-        status: announcement.status,
-        createdAt: announcement.createdAt
-      }
+      message: 'Announcement(s) created successfully by teacher',
+      count: announcements.length,
+      announcements
     });
-
-  } catch (error) {
-    console.error('Create Announcement Error:', error);
-    return res.status(500).json({ message: 'Server error', error: error.message });
+  } catch (err) {
+    console.error('Teacher Create Announcement Error:', err);
+    return res.status(500).json({ message: 'Server error', error: err.message });
   }
 };
+
+
 
 // ---------------------- GET MY ANNOUNCEMENTS ----------------------
 exports.getMyAnnouncements = async (req, res) => {

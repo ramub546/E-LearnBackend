@@ -14,6 +14,8 @@ const Test = require('../models/Test'); // For clarity
 const ScheduledSubject = require('../models/scheduledSubject'); //Neww
 const schedule = require('node-schedule');//forTest
 const Announcement = require('../models/Announcement');
+const TeacherAnnouncement = require('../models/TeacherAnnouncement'); // adjust path
+
 const { DateTime } = require('luxon');
 const multer = require('multer');
 const path = require('path');
@@ -1630,30 +1632,50 @@ exports.getTeacherTests = async (req, res) => {
 // ---------------------- TEACHER CREATE ANNOUNCEMENT ----------------------
 exports.createAnnouncement = async (req, res) => {
   try {
-    const { title, message, audience } = req.body; // audience comes from radio button
+    const { title, message, audience } = req.body;
     const teacherId = req.user.id;
 
-    if (!title || !message) {
-      return res.status(400).json({ message: 'Title and message are required' });
+    if (!title || !message || !audience) {
+      return res.status(400).json({ message: 'Title, message and audience are required' });
     }
 
     const announcements = [];
 
+    const baseData = {
+      title,
+      description: message,        // 🔑 schema expects description
+      announcementType: 'student', // 🔑 valid enum value
+      createdBy: teacherId
+    };
+
     if (audience === 'Students Only') {
-      const ann = new Announcement({ title, message, targetAudience: 'student', createdBy: teacherId });
+      const ann = new TeacherAnnouncement({
+        ...baseData
+      });
       await ann.save();
       announcements.push(ann);
+
     } else if (audience === 'Parents Only') {
-      const ann = new Announcement({ title, message, targetAudience: 'parent', createdBy: teacherId });
+      const ann = new TeacherAnnouncement({
+        ...baseData
+      });
       await ann.save();
       announcements.push(ann);
+
     } else if (audience === 'Parents & Students') {
-      // create two announcements: one for student, one for parent
-      const annStudent = new Announcement({ title, message, targetAudience: 'student', createdBy: teacherId });
-      const annParent = new Announcement({ title, message, targetAudience: 'parent', createdBy: teacherId });
+      const annStudent = new TeacherAnnouncement({
+        ...baseData
+      });
+
+      const annParent = new TeacherAnnouncement({
+        ...baseData
+      });
+
       await annStudent.save();
       await annParent.save();
+
       announcements.push(annStudent, annParent);
+
     } else {
       return res.status(400).json({ message: 'Invalid audience selection' });
     }
@@ -1663,12 +1685,15 @@ exports.createAnnouncement = async (req, res) => {
       count: announcements.length,
       announcements
     });
+
   } catch (err) {
     console.error('Teacher Create Announcement Error:', err);
-    return res.status(500).json({ message: 'Server error', error: err.message });
+    return res.status(500).json({
+      message: 'Server error',
+      error: err.message
+    });
   }
 };
-
 
 
 // ---------------------- GET MY ANNOUNCEMENTS ----------------------
